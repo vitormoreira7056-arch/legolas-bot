@@ -191,10 +191,15 @@ class EventActions {
           try {
             const member = await interaction.guild.members.fetch(userId);
             if (member && member.voice.channel) {
+              // Só move se estiver em outro canal de voz
               await member.voice.setChannel(voiceChannel);
+            } else if (member && !member.voice.channel) {
+              // Se não estiver em nenhum canal, não faz nada (não pode forçar entrar)
+              // Opcionalmente pode enviar DM avisando
             }
           } catch (moveError) {
             console.error(`Não foi possível mover ${userId}:`, moveError.message);
+            // Continua com os outros mesmo se um falhar
           }
         }
       }
@@ -563,7 +568,6 @@ class EventActions {
 
     } catch (error) {
       console.error('Erro ao criar canal:', error);
-      // Fallback: usar canal existente se houver erro
       textChannel = await interaction.guild.channels.fetch(event.participarChannelId).catch(() => null);
     }
 
