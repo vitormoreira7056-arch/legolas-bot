@@ -1,7 +1,7 @@
-const { 
-  EmbedBuilder, 
-  ActionRowBuilder, 
-  ButtonBuilder, 
+const {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
   ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
@@ -378,25 +378,25 @@ class ConfigHandler {
       .setColor(0x2ECC71)
       .setThumbnail('https://i.imgur.com/57FMAF7.png')
       .addFields(
-        { 
-          name: '💰 **Saldo Geral no Bot**', 
-          value: `🪙 ${saldoTotalGuilda.toLocaleString()}`, 
-          inline: true 
+        {
+          name: '💰 **Saldo Geral no Bot**',
+          value: `🪙 ${saldoTotalGuilda.toLocaleString()}`,
+          inline: true
         },
-        { 
-          name: '💸 **Arrecadação (Taxas)**', 
-          value: `🪙 ${arrecadacaoTaxas.toLocaleString()} (${taxaAtual}%)`, 
-          inline: true 
+        {
+          name: '💸 **Arrecadação (Taxas)**',
+          value: `🪙 ${arrecadacaoTaxas.toLocaleString()} (${taxaAtual}%)`,
+          inline: true
         },
-        { 
-          name: '💳 **Dívida com Membros**', 
-          value: `🪙 ${dividaTotal.toLocaleString()}`, 
-          inline: true 
+        {
+          name: '💳 **Dívida com Membros**',
+          value: `🪙 ${dividaTotal.toLocaleString()}`,
+          inline: true
         },
-        { 
-          name: '📊 **Patrimônio Líquido**', 
-          value: `🪙 ${(saldoTotalGuilda - dividaTotal).toLocaleString()}`, 
-          inline: false 
+        {
+          name: '📊 **Patrimônio Líquido**',
+          value: `🪙 ${(saldoTotalGuilda - dividaTotal).toLocaleString()}`,
+          inline: false
         }
       )
       .setFooter({ text: 'Atualiza a cada 5 minutos ou após transações' })
