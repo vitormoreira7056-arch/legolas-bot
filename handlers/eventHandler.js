@@ -113,30 +113,24 @@ class EventHandler {
 
   static async createEvent(interaction, eventData) {
     const guild = interaction.guild;
-    // 🆕 CORREÇÃO: Emoji alterado de '🔥' para '⚔️' para corresponder ao setupManager.js
+    
+    // Buscar categoria de eventos ativos
     const categoriaEventos = guild.channels.cache.find(c => c.name === '⚔️ EVENTOS ATIVOS' && c.type === 4);
-    const categoriaBanco = guild.channels.cache.find(c => c.name === 'banco da guilda' && c.type === 4);
-
+    
+    // 🆕 Buscar canal "👋╠participar" na categoria "💰 BANCO DA GUILDA"
+    const canalParticipar = guild.channels.cache.find(c => c.name === '👋╠participar');
+    
     if (!categoriaEventos) {
       throw new Error('Categoria ⚔️ EVENTOS ATIVOS não encontrada! Execute /instalar primeiro.');
     }
 
+    if (!canalParticipar) {
+      throw new Error('Canal 👋╠participar não encontrado na categoria BANCO DA GUILDA! Execute /instalar primeiro.');
+    }
+
     const eventId = `evt_${Date.now()}_${interaction.user.id}`;
 
-    // Criar canal de texto
-    const textChannel = await guild.channels.create({
-      name: `📋-${eventData.nome.toLowerCase().replace(/\s+/g, '-')}`,
-      type: 0,
-      parent: categoriaEventos.id,
-      permissionOverwrites: [
-        {
-          id: guild.id,
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory']
-        }
-      ]
-    });
-
-    // Criar canal de voz
+    // 🆕 Criar apenas o canal de voz na categoria "EVENTOS ATIVOS"
     const voiceChannel = await guild.channels.create({
       name: `🔊 ${eventData.nome}`,
       type: 2,
@@ -153,14 +147,17 @@ class EventHandler {
       horario: eventData.horario,
       vagas: eventData.vagas,
       criadorId: interaction.user.id,
-      textChannelId: textChannel.id,
+      // 🆕 Não criamos mais canal de texto, usamos o canal 👋╠participar
+      textChannelId: canalParticipar.id,
       voiceChannelId: voiceChannel.id,
       participantes: [],
       participacaoIndividual: new Map(),
       status: 'aguardando',
       trancado: false,
       criadoEm: Date.now(),
-      guildId: guild.id
+      guildId: guild.id,
+      // 🆕 Guardar ID da mensagem do painel para atualizar depois
+      painelMessageId: null
     };
 
     EventActions.activeEvents.set(eventId, evento);
@@ -168,17 +165,20 @@ class EventHandler {
     const embed = this.createEventEmbed(evento, interaction.member);
     const buttons = this.createEventButtons(eventId, false);
 
-    // 🆕 CORREÇÃO: Removido [] em volta de buttons (já é um array)
+    // 🆕 Enviar o painel no canal "👋╠participar"
     const membroRole = guild.roles.cache.find(r => r.name === 'Membro');
     const mentionText = membroRole ? `<@&${membroRole.id}>` : '@everyone';
 
-    await textChannel.send({
+    const painelMessage = await canalParticipar.send({
       content: `📢 ${mentionText} Novo evento criado!`,
       embeds: [embed],
       components: buttons
     });
 
-    return { textChannel, voiceChannel, eventId };
+    // 🆕 Salvar ID da mensagem do painel
+    evento.painelMessageId = painelMessage.id;
+
+    return { textChannel: canalParticipar, voiceChannel, eventId, painelMessage };
   }
 
   static createEventEmbed(evento, criador) {
@@ -196,7 +196,8 @@ class EventHandler {
       .addFields(
         { name: '👤 Criador', value: `<@${evento.criadorId}>`, inline: true },
         { name: '🕐 Horário', value: evento.horario, inline: true },
-        { name: '👥 Participantes', value: `${evento.participantes.length}${evento.vagas ? `/${evento.vagas}` : ''}`, inline: true }
+        { name: '👥 Participantes', value: `${evento.participantes.length}${evento.vagas ? `/${evento.vagas}` : ''}`, inline: true },
+        { name: '🔊 Canal de Voz', value: `<#${evento.voiceChannelId}>`, inline: false }
       );
 
     if (evento.requisitos) {
@@ -258,18 +259,22 @@ class EventHandler {
     return [row1, row2, row3];
   }
 
+  // 🆕 Atualizado para buscar a mensagem do painel no canal 👋╠participar
   static async atualizarEmbedEvento(interaction, evento) {
     const channel = interaction.guild.channels.cache.get(evento.textChannelId);
     if (!channel) return;
 
-    const messages = await channel.messages.fetch({ limit: 10 });
-    const botMessage = messages.find(m => m.author.id === interaction.client.user.id && m.embeds.length > 0);
-
-    const embed = this.createEventEmbed(evento, await interaction.guild.members.fetch(evento.criadorId));
-    const buttons = this.createEventButtons(evento.id, evento.trancado);
-
-    if (botMessage) {
-      await botMessage.edit({ embeds: [embed], components: buttons });
+    try {
+      // Buscar a mensagem específica do painel deste evento
+      const painelMessage = await channel.messages.fetch(evento.painelMessageId).catch(() => null);
+      
+      if (painelMessage) {
+        const embed = this.createEventEmbed(evento, await interaction.guild.members.fetch(evento.criadorId).catch(() => null));
+        const buttons = this.createEventButtons(evento.id, evento.trancado);
+        await painelMessage.edit({ embeds: [embed], components: buttons });
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar painel do evento:', error);
     }
   }
 
@@ -497,13 +502,22 @@ class EventHandler {
     }
 
     const voiceChannel = interaction.guild.channels.cache.get(evento.voiceChannelId);
-    const textChannel = interaction.guild.channels.cache.get(evento.textChannelId);
+    
+    // 🆕 Deletar a mensagem do painel no canal 👋╠participar
+    try {
+      const canalParticipar = interaction.guild.channels.cache.get(evento.textChannelId);
+      if (canalParticipar && evento.painelMessageId) {
+        const painelMessage = await canalParticipar.messages.fetch(evento.painelMessageId).catch(() => null);
+        if (painelMessage) await painelMessage.delete();
+      }
+    } catch (error) {
+      console.log('Erro ao deletar painel:', error.message);
+    }
 
     if (voiceChannel) await voiceChannel.delete().catch(() => {});
-    if (textChannel) await textChannel.delete().catch(() => {});
 
     EventActions.activeEvents.delete(eventId);
-    await interaction.reply({ content: '❌ Evento cancelado e canais removidos!', ephemeral: true });
+    await interaction.reply({ content: '❌ Evento cancelado!', ephemeral: true });
   }
 
   static async handleFinalizar(interaction, eventId) {
@@ -567,6 +581,17 @@ class EventHandler {
 
     const duracaoTotal = evento.iniciadoEm ? Date.now() - evento.iniciadoEm : 0;
 
+    // 🆕 Deletar o painel antigo do canal 👋╠participar
+    try {
+      const canalParticipar = interaction.guild.channels.cache.get(evento.textChannelId);
+      if (canalParticipar && evento.painelMessageId) {
+        const painelMessage = await canalParticipar.messages.fetch(evento.painelMessageId).catch(() => null);
+        if (painelMessage) await painelMessage.delete();
+      }
+    } catch (error) {
+      console.log('Erro ao deletar painel antigo:', error.message);
+    }
+
     let textChannel;
     try {
       textChannel = await interaction.guild.channels.create({
@@ -588,11 +613,7 @@ class EventHandler {
 
     } catch (error) {
       console.error('Erro ao criar canal:', error);
-      textChannel = interaction.guild.channels.cache.get(evento.textChannelId);
-      if (textChannel && categoriaEncerrados) {
-        await textChannel.setParent(categoriaEncerrados.id);
-        await textChannel.setName(`💰-${evento.nome}`);
-      }
+      return interaction.reply({ content: '❌ Erro ao criar canal de loot!', ephemeral: true });
     }
 
     evento.status = 'encerrado';
