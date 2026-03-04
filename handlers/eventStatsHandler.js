@@ -166,7 +166,7 @@ class EventStatsHandler {
 
       const embed = new EmbedBuilder()
         .setTitle('📊 **ESTATÍSTICAS DE EVENTOS**')
-        .setDescription(`Estatísticas atualizadas em <t:${Math.floor(Date.now() / 1000)}:F>`)
+        .setDescription(`Estatísticas atualizadas em <t:${Math.floor(Date.now() / 1000)}:R>`)
         .setColor(0x3498DB)
         .addFields(
           { name: '🔥 Eventos Realizados', value: totalEventos.toString(), inline: true },
