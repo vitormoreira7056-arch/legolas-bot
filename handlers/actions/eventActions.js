@@ -40,9 +40,9 @@ class EventActions {
       const buttons = EventHandler.createEventButtonsByStatus(event);
 
       // 🆕 IMPORTANTE: Editar a mensagem com os novos componentes
-      await message.edit({ 
-        embeds: [embed], 
-        components: buttons 
+      await message.edit({
+        embeds: [embed],
+        components: buttons
       });
 
       console.log(`[OK] Painel atualizado - Status: ${event.status} - Participantes: ${event.participantes?.length || 0}`);
@@ -115,9 +115,9 @@ class EventActions {
 
     // 🆕 VERIFICAÇÃO DE TRANCADO - Impedir participação se trancado
     if (event.trancado) {
-      return interaction.reply({ 
-        content: '🔒 Evento está **trancado**! Apenas administradores podem destrancar.', 
-        ephemeral: true 
+      return interaction.reply({
+        content: '🔒 Evento está **trancado**! Apenas administradores podem destrancar.',
+        ephemeral: true
       });
     }
 
@@ -218,7 +218,7 @@ class EventActions {
 
     let msg = estavaPausado ? '▶️ Retomado!' : '▶️ Iniciado!';
     if (movidos > 0) msg += ` (${movidos} movidos)`;
-    
+
     await interaction.reply({ content: msg, ephemeral: true });
   }
 
@@ -300,13 +300,13 @@ class EventActions {
     }
 
     event.trancado = true;
-    
+
     // 🆕 Atualizar painel para mostrar botão de participar desabilitado
     await this.forceUpdatePanel(interaction, eventId);
 
-    await interaction.reply({ 
-      content: `🔒 **${event.nome}** trancado! Novas entradas bloqueadas.`, 
-      ephemeral: true 
+    await interaction.reply({
+      content: `🔒 **${event.nome}** trancado! Novas entradas bloqueadas.`,
+      ephemeral: true
     });
   }
 
@@ -323,13 +323,13 @@ class EventActions {
     }
 
     event.trancado = false;
-    
+
     // 🆕 Atualizar painel para reabilitar participação
     await this.forceUpdatePanel(interaction, eventId);
 
-    await interaction.reply({ 
-      content: `🔓 **${event.nome}** destrancado! Novas entradas liberadas.`, 
-      ephemeral: true 
+    await interaction.reply({
+      content: `🔓 **${event.nome}** destrancado! Novas entradas liberadas.`,
+      ephemeral: true
     });
   }
 
@@ -356,7 +356,7 @@ class EventActions {
     try {
       const channel = await interaction.guild.channels.fetch(event.textChannelId);
       const message = await channel.messages.fetch(event.painelMessageId);
-      
+
       const embed = new EmbedBuilder()
         .setTitle(`❌ **${event.nome}** - CANCELADO`)
         .setDescription(`Cancelado por ${interaction.user}`)
@@ -461,32 +461,14 @@ class EventActions {
         }
       }
 
-      // Criar painel de loot no novo canal
+      // 🆕 MELHORIA: Criar painel detalhado de loot no novo canal
       if (textChannel) {
-        const duracao = event.iniciadoEm ? Math.floor((Date.now() - event.iniciadoEm) / 60000) : 0;
-        const embedLoot = new EmbedBuilder()
-          .setTitle(`💰 **LOOT SPLIT - ${event.nome}**`)
-          .setDescription(
-            `> Finalizado por ${interaction.user}\n\n` +
-            `👥 **Participantes:** ${event.participantes.length}\n` +
-            `⏱️ **Duração:** ${duracao} minutos`
-          )
-          .setColor(0x2ECC71)
-          .setTimestamp();
-
-        const row = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder()
-              .setCustomId(`simulate_loot_${eventId}`)
-              .setLabel('💰 Simular Loot')
-              .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-              .setCustomId(`archive_loot_${eventId}`)
-              .setLabel('📦 Arquivar')
-              .setStyle(ButtonStyle.Secondary)
-          );
-
-        await textChannel.send({ embeds: [embedLoot], components: [row] });
+        const duracao = event.iniciadoEm ? (Date.now() - event.iniciadoEm) : 0;
+        
+        // Usar o novo painel detalhado do LootSplitUI
+        const painelLoot = LootSplitUI.createFinishedEventPanel(event, duracao);
+        
+        await textChannel.send(painelLoot);
       }
 
       if (EventStatsHandler.saveEventStats) {
@@ -506,14 +488,47 @@ class EventActions {
     }
   }
 
+  // 🆕 CORREÇÃO: Método com verificação de segurança
   static async handleSimulateLoot(interaction, eventId) {
-    const modal = LootSplitUI.createSimulationModal(eventId);
-    await interaction.showModal(modal);
+    try {
+      // Verificar se LootSplitUI está disponível
+      if (!LootSplitUI || typeof LootSplitUI.createSimulationModal !== 'function') {
+        console.error('[ERRO] LootSplitUI.createSimulationModal não está disponível');
+        return interaction.reply({ 
+          content: '❌ Erro interno: Sistema de simulação indisponível.', 
+          ephemeral: true 
+        });
+      }
+      
+      const modal = LootSplitUI.createSimulationModal(eventId);
+      await interaction.showModal(modal);
+    } catch (error) {
+      console.error('[ERRO] ao mostrar modal:', error);
+      await interaction.reply({ 
+        content: '❌ Erro ao abrir simulação. Tente novamente.', 
+        ephemeral: true 
+      });
+    }
   }
 
   static async handleResimulateLoot(interaction, eventId) {
-    const modal = LootSplitUI.createSimulationModal(eventId);
-    await interaction.showModal(modal);
+    try {
+      if (!LootSplitUI || typeof LootSplitUI.createSimulationModal !== 'function') {
+        return interaction.reply({ 
+          content: '❌ Erro interno: Sistema de simulação indisponível.', 
+          ephemeral: true 
+        });
+      }
+      
+      const modal = LootSplitUI.createSimulationModal(eventId);
+      await interaction.showModal(modal);
+    } catch (error) {
+      console.error('[ERRO] ao mostrar modal:', error);
+      await interaction.reply({ 
+        content: '❌ Erro ao reabrir simulação.', 
+        ephemeral: true 
+      });
+    }
   }
 
   static async handleArchiveLoot(interaction, eventId) {
@@ -536,8 +551,23 @@ class EventActions {
       return interaction.reply({ content: '❌ Sem permissão!', ephemeral: true });
     }
 
-    const modal = LootSplitUI.createUpdateParticipationModal(eventId);
-    await interaction.showModal(modal);
+    try {
+      if (!LootSplitUI || typeof LootSplitUI.createUpdateParticipationModal !== 'function') {
+        return interaction.reply({ 
+          content: '❌ Erro interno: Modal indisponível.', 
+          ephemeral: true 
+        });
+      }
+      
+      const modal = LootSplitUI.createUpdateParticipationModal(eventId);
+      await interaction.showModal(modal);
+    } catch (error) {
+      console.error('[ERRO] ao mostrar modal de atualização:', error);
+      await interaction.reply({ 
+        content: '❌ Erro ao abrir atualização.', 
+        ephemeral: true 
+      });
+    }
   }
 }
 
