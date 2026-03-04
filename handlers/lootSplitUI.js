@@ -1,29 +1,36 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const ConfigHandler = require('./configHandler');
 
 class LootSplitUI {
   static createFinishedEventPanel(evento, duracaoTotalMs) {
     const config = ConfigHandler.getConfig(evento.guildId) || {};
     const taxaGuilda = config.taxaPadrao || 10;
-    
+
+    // Calcular duração total formatada
     const duracaoHoras = Math.floor(duracaoTotalMs / (1000 * 60 * 60));
     const duracaoMinutos = Math.floor((duracaoTotalMs % (1000 * 60 * 60)) / (1000 * 60));
     const duracaoSegundos = Math.floor((duracaoTotalMs % (1000 * 60)) / 1000);
     const duracaoFormatada = `${duracaoHoras.toString().padStart(2, '0')}:${duracaoMinutos.toString().padStart(2, '0')}:${duracaoSegundos.toString().padStart(2, '0')}`;
 
+    // 🆕 MELHORIA: Calcular quando o evento começou (baseado no iniciadoEm ou criadoEm)
+    const inicioEvento = evento.iniciadoEm || evento.criadoEm || Date.now();
+    const tempoDesdeInicio = Date.now() - inicioEvento;
+    const horasDesdeInicio = Math.floor(tempoDesdeInicio / (1000 * 60 * 60));
+    const minutosDesdeInicio = Math.floor((tempoDesdeInicio % (1000 * 60 * 60)) / (1000 * 60));
+
     let tempoTotalParticipacao = 0;
     const participantesDetalhados = [];
 
     // Suportar tanto presenceData (novo) quanto participacaoIndividual (legado)
-    const participacoes = evento.participacaoIndividual || 
+    const participacoes = evento.participacaoIndividual ||
       (evento.presenceData ? new Map(Object.entries(evento.presenceData.participants || {})) : new Map());
 
-    if (participacoes) {
+    if (participacoes && participacoes.size > 0) {
       for (const [userId, participacao] of participacoes) {
         const tempoTotal = participacao.tempoTotal || participacao.totalTime || 0;
         tempoTotalParticipacao += tempoTotal;
-        
-        const porcentagemParticipacao = duracaoTotalMs > 0 
+
+        const porcentagemParticipacao = duracaoTotalMs > 0
           ? ((tempoTotal / duracaoTotalMs) * 100).toFixed(1)
           : 0;
 
@@ -42,40 +49,91 @@ class LootSplitUI {
       }
     }
 
-    participantesDetalhados.sort((a, b) => b.tempoMs - a.tempoMs);
-
-    let listaParticipantes = '';
-    if (participantesDetalhados.length > 0) {
-      listaParticipantes = participantesDetalhados.map((p, index) => {
-        const medalha = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '•';
-        return `${medalha} <@${p.userId}> **${p.nickname}**\n   ⏱️ ${p.tempoFormatado} (${p.porcentagem}%)`;
-      }).join('\n\n');
-    } else {
-      listaParticipantes = '*Nenhum participante registrado*';
+    // 🆕 MELHORIA: Adicionar participantes que estão na lista mas não têm tempo registrado
+    if (evento.participantes && evento.participantes.length > 0) {
+      for (const userId of evento.participantes) {
+        if (!participantesDetalhados.find(p => p.userId === userId)) {
+          participantesDetalhados.push({
+            userId,
+            nickname: 'Não registrado',
+            tempoMs: 0,
+            tempoFormatado: '00:00:00',
+            porcentagem: '0.0'
+          });
+        }
+      }
     }
 
-    if (listaParticipantes.length > 1024) {
-      listaParticipantes = listaParticipantes.substring(0, 1021) + '...';
+    participantesDetalhados.sort((a, b) => b.tempoMs - a.tempoMs);
+
+    // 🆕 MELHORIA: Criar lista formatada com campos individuais para melhor visualização
+    const fields = [];
+    
+    // Adicionar campo de informações gerais
+    fields.push({
+      name: '📊 INFORMAÇÕES GERAIS',
+      value: 
+        `🕐 **Duração Total:** ${duracaoFormatada}\n` +
+        `⏱️ **Tempo desde Início:** ${horasDesdeInicio}h ${minutosDesdeInicio}m\n` +
+        `👥 **Total de Participantes:** ${participantesDetalhados.length}\n` +
+        `💸 **Taxa da Guilda:** ${taxaGuilda}%`,
+      inline: false
+    });
+
+    // 🆕 MELHORIA: Lista de participantes em grupos de 25 (limite do Discord)
+    if (participantesDetalhados.length > 0) {
+      let descricaoParticipantes = '';
+      let contador = 0;
+      let numeroCampo = 1;
+
+      for (let i = 0; i < participantesDetalhados.length; i++) {
+        const p = participantesDetalhados[i];
+        const medalha = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+        
+        const linha = `${medalha} <@${p.userId}> **${p.nickname}**\n   ⏱️ ${p.tempoFormatado} (${p.porcentagem}%)\n\n`;
+        
+        // Se passar de 1024 caracteres, criar novo campo
+        if ((descricaoParticipantes + linha).length > 1024) {
+          fields.push({
+            name: `👥 PARTICIPANTES ${numeroCampo > 1 ? `(CONT. ${numeroCampo})` : ''}`,
+            value: descricaoParticipantes || 'Sem dados',
+            inline: false
+          });
+          descricaoParticipantes = linha;
+          numeroCampo++;
+        } else {
+          descricaoParticipantes += linha;
+        }
+      }
+
+      // Adicionar último campo se houver conteúdo
+      if (descricaoParticipantes) {
+        fields.push({
+          name: `👥 PARTICIPANTES ${numeroCampo > 1 ? `(CONT. ${numeroCampo})` : ''}`,
+          value: descricaoParticipantes,
+          inline: false
+        });
+      }
+    } else {
+      fields.push({
+        name: '👥 PARTICIPANTES',
+        value: '*Nenhum participante registrado*',
+        inline: false
+      });
     }
 
     const embed = new EmbedBuilder()
       .setTitle(`💰 **PAINEL DE LOOTSPLIT - ${evento.nome.toUpperCase()}**`)
-      .setDescription(
-        `> Evento encerrado e pronto para divisão de loot!\n\n` +
-        `**📊 INFORMAÇÕES GERAIS**\n` +
-        `🕐 **Duração Total:** ${duracaoFormatada}\n` +
-        `👥 **Participantes:** ${participantesDetalhados.length}\n` +
-        `💸 **Taxa da Guilda:** ${taxaGuilda}%\n\n` +
-        `**👥 PARTICIPAÇÃO DETALHADA**`
-      )
+      .setDescription(`> Evento encerrado e pronto para divisão de loot!`)
       .setColor(0xF1C40F)
-      .addFields({
-        name: 'Ranking de Participação',
-        value: listaParticipantes || 'Nenhum dado',
-        inline: false
-      })
-      .setFooter({ text: `Evento ID: ${evento.id} • Use os botões abaixo para gerenciar` })
       .setTimestamp();
+
+    // Adicionar todos os campos
+    embed.addFields(fields);
+    
+    embed.setFooter({ 
+      text: `Evento ID: ${evento.id} • Taxa: ${taxaGuilda}% • Use os botões abaixo para gerenciar` 
+    });
 
     const botoes = new ActionRowBuilder()
       .addComponents(
@@ -96,9 +154,8 @@ class LootSplitUI {
     return { embeds: [embed], components: [botoes] };
   }
 
+  // 🆕 CORREÇÃO: Método deve ser static e retornar o modal diretamente
   static createSimulationModal(eventId) {
-    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
-    
     const modal = new ModalBuilder()
       .setCustomId(`modal_simulate_${eventId}`)
       .setTitle('🧮 Simular Divisão de Loot');
@@ -126,8 +183,6 @@ class LootSplitUI {
   }
 
   static createUpdateParticipationModal(eventId) {
-    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
-    
     const modal = new ModalBuilder()
       .setCustomId(`modal_update_participation_${eventId}`)
       .setTitle('📝 Atualizar Tempo de Participação');
@@ -162,12 +217,12 @@ class LootSplitUI {
       .setTimestamp();
 
     const campos = [];
-    for (const [userId, dados] of Object.entries(resultado)) {
+    for (const [userId, dados] of Object.entries(resultado.distribuicao || resultado)) {
       let valorStr = `💰 🪙 ${Math.floor(dados.valor).toLocaleString()}`;
       if (dados.ajuste) {
         valorStr += ` (ajuste: ${dados.ajuste})`;
       }
-      
+
       campos.push({
         name: `${dados.nickname || 'Desconhecido'}`,
         value: `${valorStr}\n⏱️ ${dados.tempoParticipado || '00:00:00'} (${dados.porcentagem}%)`,
@@ -179,7 +234,9 @@ class LootSplitUI {
       embed.addFields(campos);
     } else {
       embed.addFields(campos.slice(0, 24));
-      embed.setFooter({ text: `E mais ${campos.length - 24} participantes... • Total: 🪙 ${valorTotal.toLocaleString()}` });
+      embed.setFooter({ 
+        text: `E mais ${campos.length - 24} participantes... • Total: 🪙 ${valorTotal.toLocaleString()}` 
+      });
     }
 
     return embed;
