@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const ConfigHandler = require('./configHandler');
-const db = require('../utils/database'); // 🆕 ADICIONADO para acesso ao banco
+const db = require('../utils/database');
 
 class LootSplitCore {
   static calcularDivisao(evento, valorTotal, valorReparo = 0, ajustes = {}) {
@@ -87,7 +87,7 @@ class LootSplitCore {
       resultado,
       valorReparo,
       finalizado: false,
-      pago: false, // 🆕 NOVO: Flag para controle de pagamento
+      pago: false,
       data: new Date().toISOString()
     };
 
@@ -109,7 +109,7 @@ class LootSplitCore {
     return null;
   }
 
-  // 🆕 MELHORADO: Agora realiza o pagamento aos participantes
+  // 🆕 MELHORADO: Agora retorna resultado detalhado para uso no handler
   static async finalizarSplit(evento, resultado, interaction) {
     const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
 
@@ -121,7 +121,6 @@ class LootSplitCore {
         throw new Error('Simulação não encontrada');
       }
 
-      // Verificar se já foi pago para evitar duplicidade
       if (simulacao.pago) {
         console.log(`[LOOTSPLIT] Split ${evento.id} já foi pago anteriormente`);
         return { sucesso: false, jaPago: true };
@@ -133,7 +132,7 @@ class LootSplitCore {
       console.log(`[LOOTSPLIT] Total a distribuir: ${Object.values(distribuicao).reduce((a, b) => a + (b.valor || 0), 0)}`);
       console.log(`[LOOTSPLIT] Taxa guilda: ${taxa}`);
 
-      // 🆕 PAGAR CADA PARTICIPANTE
+      // PAGAR CADA PARTICIPANTE
       const pagamentosRealizados = [];
       const erros = [];
 
@@ -142,13 +141,11 @@ class LootSplitCore {
           const valor = Math.floor(dadosDistribuicao.valor || 0);
           
           if (valor > 0) {
-            // Adicionar saldo ao usuário
             const user = db.getUser(userId);
             user.saldo += valor;
             user.totalDepositado = (user.totalDepositado || 0) + valor;
             db.updateUser(userId, user);
 
-            // Registrar transação
             db.addTransaction('loot_split', userId, valor, {
               eventoId: evento.id,
               eventoNome: evento.nome,
@@ -170,20 +167,25 @@ class LootSplitCore {
         }
       }
 
-      // 🆕 DEPOSITAR TAXA DA GUILDA NO BANCO DA GUILDA
+      // 🆕 CORREÇÃO: Depositar taxa da guilda usando método correto
       if (taxa > 0) {
         try {
-          const guildBalance = db.getGuildBalance(evento.guildId);
-          const novoSaldo = guildBalance + taxa;
-          db.addEventLoot(evento.guildId, taxa); // Usa o método do database.js
+          // Criar uma \"conta\" virtual para a guilda ou adicionar ao saldo de um usuário especial
+          // Vamos criar um registro de transação especial para a guilda
+          db.addTransaction('taxa_guilda', 'GUILDA', taxa, {
+            eventoId: evento.id,
+            eventoNome: evento.nome,
+            tipo: 'receita_taxa',
+            valor: taxa
+          });
           
-          console.log(`[LOOTSPLIT] Taxa de ${taxa} depositada no banco da guilda`);
+          console.log(`[LOOTSPLIT] Taxa de ${taxa} registrada para a guilda`);
         } catch (error) {
-          console.error('[LOOTSPLIT] Erro ao depositar taxa da guilda:', error);
+          console.error('[LOOTSPLIT] Erro ao registrar taxa da guilda:', error);
         }
       }
 
-      // 🆕 REGISTRAR REPARO SE HOUVER
+      // Registrar reparo se houver
       if (valorReparo > 0) {
         try {
           db.addTransaction('reparo_guilda', 'SISTEMA', valorReparo, {
@@ -222,13 +224,11 @@ class LootSplitCore {
     }
   }
 
-  // 🆕 NOVO: Verificar se split já foi pago
   static async verificarPagamento(guildId, eventId) {
     const simulacao = await this.carregarSimulacao(guildId, eventId);
     return simulacao?.pago === true;
   }
 
-  // 🆕 NOVO: Obter resumo do split para exibição
   static async obterResumoSplit(guildId, eventId) {
     const simulacao = await this.carregarSimulacao(guildId, eventId);
     if (!simulacao) return null;
