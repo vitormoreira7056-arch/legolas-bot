@@ -186,7 +186,7 @@ class EventActions {
     // 🆕 CORREÇÃO: Mover todos os participantes para o canal de voz automaticamente
     let movidos = 0;
     let naoMovidos = [];
-
+    
     try {
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId);
       if (voiceChannel) {
@@ -227,7 +227,7 @@ class EventActions {
     // 🆕 CORREÇÃO: Montar mensagem de resposta detalhada
     let msgResposta = `▶️ Evento **${event.nome}** iniciado!\n\n`;
     msgResposta += `✅ **${movidos}** participante(s) movido(s) para o canal de voz.\n`;
-
+    
     if (naoMovidos.length > 0) {
       msgResposta += `⚠️ **${naoMovidos.length}** não movido(s) (não estavam em canal de voz): ${naoMovidos.join(', ')}\n`;
       msgResposta += `🔊 Entre em qualquer canal de voz para ser movido automaticamente.`;
@@ -535,20 +535,34 @@ class EventActions {
       }
     }
 
-    // 🆕 CORREÇÃO: Salvar estatísticas antes de remover
-    try {
-      await EventStatsHandler.saveEventStats(event, interaction.guild);
-    } catch (error) {
-      console.error('Erro ao salvar estatísticas:', error);
-    }
+    // 🆕 CORREÇÃO: Buscar canal "aguardando-evento" para mover participantes
+    const canalAguardando = interaction.guild.channels.cache.find(
+      c => c.type === ChannelType.GuildVoice && c.name === 'aguardando-evento'
+    );
 
-    // 🆕 CORREÇÃO: Buscar canais e categoria
+    // 🆕 CORREÇÃO: Buscar canais e categoria de eventos encerrados
     const categoriaEncerrados = interaction.guild.channels.cache.find(
       c => c.type === ChannelType.GuildCategory && c.name === '📁 EVENTOS ENCERRADOS'
     );
 
     const textChannel = interaction.guild.channels.cache.get(event.textChannelId);
     const voiceChannel = interaction.guild.channels.cache.get(event.voiceChannelId);
+
+    // 🆕 CORREÇÃO: Mover participantes do canal de voz para "aguardando-evento"
+    if (voiceChannel && canalAguardando) {
+      try {
+        const membrosNoCanal = voiceChannel.members;
+        for (const [memberId, member] of membrosNoCanal) {
+          try {
+            await member.voice.setChannel(canalAguardando);
+          } catch (moveError) {
+            console.error(`Não foi possível mover ${memberId} para aguardando:`, moveError.message);
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao mover participantes para aguardando:', error);
+      }
+    }
 
     // 🆕 CORREÇÃO: Mover APENAS o canal de texto para EVENTOS ENCERRADOS
     if (textChannel && categoriaEncerrados) {
@@ -595,7 +609,7 @@ class EventActions {
     EventActions.activeEvents.delete(eventId);
 
     await interaction.reply({
-      content: `✅ Evento **${event.nome}** finalizado!\n📁 Canal de texto arquivado.\n🔊 Canal de voz deletado.`,
+      content: `✅ Evento **${event.nome}** finalizado!\n📁 Canal de texto arquivado.\n🔊 Canal de voz deletado.\n👥 Participantes movidos para aguardando-evento.`,
       ephemeral: true
     });
   }
