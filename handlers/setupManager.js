@@ -1,10 +1,10 @@
-const { 
-  ChannelType, 
-  PermissionFlagsBits, 
-  EmbedBuilder, 
-  ActionRowBuilder, 
-  ButtonBuilder, 
-  ButtonStyle 
+const {
+  ChannelType,
+  PermissionFlagsBits,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require('discord.js');
 const EmbedUtils = require('../utils/embedUtils');
 const ConfigHandler = require('./configHandler');
@@ -160,13 +160,13 @@ class SetupManager {
     // Criar nova
     const perms = this.getPermissions();
     const overwrites = [
-      { 
-        id: perms.everyone, 
-        deny: [PermissionFlagsBits.ViewChannel] 
+      {
+        id: perms.everyone,
+        deny: [PermissionFlagsBits.ViewChannel]
       },
-      { 
-        id: perms.adm, 
-        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] 
+      {
+        id: perms.adm,
+        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels]
       },
       ...permissions
     ].filter(Boolean);
@@ -194,13 +194,13 @@ class SetupManager {
 
     // Construir permission overwrites corretamente
     const overwrites = [
-      { 
-        id: perms.everyone, 
-        deny: [PermissionFlagsBits.ViewChannel] 
+      {
+        id: perms.everyone,
+        deny: [PermissionFlagsBits.ViewChannel]
       },
-      { 
-        id: perms.adm, 
-        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] 
+      {
+        id: perms.adm,
+        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels]
       }
     ];
 
@@ -238,13 +238,13 @@ class SetupManager {
     const perms = this.getPermissions();
 
     const cat = await this.getOrCreateCategory('🛡️ RECRUTAMENTO', [
-      { 
-        id: perms.recrutador, 
-        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks] 
+      {
+        id: perms.recrutador,
+        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks]
       },
-      { 
-        id: perms.staff, 
-        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages] 
+      {
+        id: perms.staff,
+        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages]
       }
     ]);
 
@@ -257,9 +257,9 @@ class SetupManager {
 
     // Só envia painel se o canal foi criado agora
     if (this.createdChannels.includes('📋╠registrar')) {
-      await chRegistrar.send({ 
-        embeds: [EmbedUtils.createRegistrationPanel()], 
-        components: [EmbedUtils.createRegisterButton()] 
+      await chRegistrar.send({
+        embeds: [EmbedUtils.createRegistrationPanel()],
+        components: [EmbedUtils.createRegisterButton()]
       });
     }
 
@@ -454,7 +454,8 @@ class SetupManager {
       { id: perms.staff, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages] }
     ]);
 
-    if (this.createdChannels.includes('📊╠painel-de-eventos')) {
+    // 🆕 CORREÇÃO: Verificar se canal existe antes de inicializar painel
+    if (this.createdChannels.includes('📊╠painel-de-eventos') && chPainelEventos) {
       await EventStatsHandler.initializePanel(chPainelEventos);
     }
 
@@ -703,7 +704,7 @@ class SetupManager {
       existingRoles: Object.keys(this.existingRoles),
       novosCanais,
       novosCargos,
-      message: novosCanais > 0 || novosCargos > 0 
+      message: novosCanais > 0 || novosCargos > 0
         ? `✅ Atualização concluída! ${novosCanais} novos canais e ${novosCargos} novos cargos criados.`
         : '✅ Estrutura já está atualizada! Nenhuma alteração necessária.'
     };
