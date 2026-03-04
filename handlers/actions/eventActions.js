@@ -1,4 +1,4 @@
-const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits, ButtonBuilder, ButtonStyle } = require('discord.js');
 const ConfigHandler = require('../configHandler');
 const BankCore = require('../bank/bankCore');
 const db = require('../../utils/database');
@@ -183,7 +183,6 @@ class EventActions {
       };
     }
 
-    // Mover todos os participantes para o canal de voz automaticamente
     try {
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId);
       if (voiceChannel) {
@@ -507,7 +506,6 @@ class EventActions {
     event.status = 'finalizado';
     event.presenceData.endTime = Date.now();
 
-    // Calcular tempo final para todos os participantes presentes
     const now = Date.now();
     for (const userId in event.presenceData.participants) {
       const p = event.presenceData.participants[userId];
@@ -519,12 +517,10 @@ class EventActions {
     }
 
     try {
-      // 1. Buscar categoria de eventos encerrados
       const categoriaEncerrados = interaction.guild.channels.cache.find(
         c => c.name === '📁 EVENTOS ENCERRADOS' && c.type === ChannelType.GuildCategory
       );
 
-      // 2. Buscar canal de voz do evento e mover participantes para Aguardando-Evento
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId).catch(() => null);
       const canalAguardando = interaction.guild.channels.cache.find(c => c.name === '🔊╠Aguardando-Evento');
 
@@ -541,10 +537,8 @@ class EventActions {
         }
       }
 
-      // 3. Converter canal de voz em canal de texto ou criar novo canal de texto
       let textChannel;
-      
-      // Tentar criar canal de texto na categoria de encerrados
+
       if (categoriaEncerrados) {
         textChannel = await interaction.guild.channels.create({
           name: `📁-${event.nome.toLowerCase().replace(/\s+/g, '-')}`,
@@ -564,12 +558,10 @@ class EventActions {
         });
       }
 
-      // 4. Deletar canal de voz original
       if (voiceChannel) {
         await voiceChannel.delete('Evento finalizado').catch(console.error);
       }
 
-      // 5. Criar embed de loot split no novo canal de texto
       if (textChannel) {
         const totalParticipants = event.participants.length;
         const embedLoot = new EmbedBuilder()
@@ -601,7 +593,6 @@ class EventActions {
         });
       }
 
-      // 6. Atualizar mensagem original no canal participar
       const channel = await interaction.guild.channels.fetch(event.participarChannelId).catch(() => null);
       if (channel) {
         const message = await channel.messages.fetch(event.participarMessageId).catch(() => null);
@@ -616,10 +607,8 @@ class EventActions {
         }
       }
 
-      // 7. Salvar estatísticas
       await EventStatsHandler.saveEventStats(event, interaction.guild);
 
-      // 8. Remover do mapa de eventos ativos após 1 hora
       setTimeout(() => {
         EventActions.activeEvents.delete(eventId);
       }, 3600000);
@@ -683,7 +672,6 @@ class EventActions {
   }
 }
 
-// Map de eventos ativos compartilhado
 EventActions.activeEvents = new Map();
 
 module.exports = EventActions;
