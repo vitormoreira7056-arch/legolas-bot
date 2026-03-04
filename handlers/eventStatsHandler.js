@@ -5,6 +5,7 @@ const path = require('path');
 class EventStatsHandler {
   static statsFile = path.join(__dirname, '..', 'data', 'eventStats.json');
   static messageIdFile = path.join(__dirname, '..', 'data', 'eventStatsMessage.json');
+  static eventsFile = path.join(__dirname, '..', 'data', 'eventStats.json'); // Arquivo com dados dos eventos
 
   // Estrutura: { userId: { events: [{eventId, date, name}], totalParticipated: 0 } }
   static stats = new Map();
@@ -52,6 +53,46 @@ class EventStatsHandler {
       console.error('Erro ao carregar messageId:', error);
     }
     return null;
+  }
+
+  // 🆕 NOVO: Buscar estatísticas de um evento específico
+  static getEventStats(guildId, eventId) {
+    try {
+      // Verificar se temos o evento em algum lugar dos dados
+      for (const [userId, userData] of this.stats.entries()) {
+        const event = userData.events?.find(e => e.eventId === eventId);
+        if (event) {
+          // Retornar estrutura compatível com o que o LootSplitHandler espera
+          return {
+            id: eventId,
+            eventId: eventId,
+            nome: event.name || 'Evento Desconhecido',
+            name: event.name || 'Evento Desconhecido',
+            guildId: guildId,
+            participantes: [], // Será preenchido se necessário
+            participacaoIndividual: new Map(),
+            iniciadoEm: new Date(event.date).getTime(),
+            finalizadoEm: new Date(event.date).getTime(),
+            status: 'encerrado',
+            duracaoTotal: 0
+          };
+        }
+      }
+      
+      // Tentar carregar de arquivo de eventos detalhado se existir
+      const eventsFile = path.join(__dirname, '..', 'data', 'events.json');
+      if (fs.existsSync(eventsFile)) {
+        const eventsData = JSON.parse(fs.readFileSync(eventsFile, 'utf8'));
+        if (eventsData[eventId]) {
+          return eventsData[eventId];
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('[EventStatsHandler] Erro ao buscar stats do evento:', error);
+      return null;
+    }
   }
 
   // Registrar participação em evento
@@ -164,7 +205,7 @@ class EventStatsHandler {
 
     const embed = new EmbedBuilder()
       .setTitle('📊 **PAINEL DE EVENTOS - ESTATÍSTICAS**')
-      .setDescription(`> Participação dos membros em eventos da guilda\n> **Período:** ${filterNames[filter]}\n\u200B`)
+      .setDescription(`> Participação dos membros em eventos da guilda\n> **Período:** ${filterNames[filter]}\n\n\u200B`)
       .setColor(0x3498DB)
       .setThumbnail(guild.iconURL({ dynamic: true }))
       .setFooter({ text: 'Atualizado automaticamente • Use o menu abaixo para filtrar' })
