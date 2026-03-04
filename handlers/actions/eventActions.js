@@ -183,7 +183,6 @@ class EventActions {
       };
     }
 
-    // Mover todos os participantes para o canal de voz automaticamente
     let movidos = 0;
     let naoMovidos = [];
 
@@ -532,10 +531,9 @@ class EventActions {
       }
     }
 
-    // 🆕 CORREÇÃO: Buscar canal "aguardando-evento" (case insensitive)
+    // 🆕 CORREÇÃO: Buscar canal "🔊╠Aguardando-Evento" com nome EXATO como no setup
     const canalAguardando = interaction.guild.channels.cache.find(
-      c => c.type === ChannelType.GuildVoice && 
-           c.name.toLowerCase() === 'aguardando-evento'
+      c => c.type === ChannelType.GuildVoice && c.name === '🔊╠Aguardando-Evento'
     );
 
     // Buscar categoria de eventos encerrados
@@ -549,7 +547,7 @@ class EventActions {
     console.log(`[FINALIZAR] Canal aguardando encontrado: ${canalAguardando ? canalAguardando.name : 'NÃO'}`);
     console.log(`[FINALIZAR] Voice channel do evento: ${voiceChannel ? voiceChannel.name : 'NÃO'}`);
 
-    // 🆕 CORREÇÃO: Mover participantes do canal de voz para "aguardando-evento" PRIMEIRO
+    // Mover participantes do canal de voz para "🔊╠Aguardando-Evento"
     let movidos = 0;
     if (voiceChannel && canalAguardando) {
       try {
@@ -557,7 +555,7 @@ class EventActions {
         const fetchedChannel = await interaction.guild.channels.fetch(voiceChannel.id);
         const membrosNoCanal = fetchedChannel.members;
         
-        console.log(`[FINALIZAR] Tentando mover ${membrosNoCanal.size} membros`);
+        console.log(`[FINALIZAR] Tentando mover ${membrosNoCanal.size} membros para 🔊╠Aguardando-Evento`);
         
         for (const [memberId, member] of membrosNoCanal) {
           try {
@@ -574,8 +572,8 @@ class EventActions {
         console.error('[FINALIZAR] Erro ao mover participantes:', error);
       }
     } else {
-      if (!canalAguardando) console.log('[FINALIZAR] ERRO: Canal aguardando-evento não encontrado!');
-      if (!voiceChannel) console.log('[FINALIZAR] ERRO: Voice channel não encontrado!');
+      if (!canalAguardando) console.log('[FINALIZAR] ERRO: Canal 🔊╠Aguardando-Evento não encontrado!');
+      if (!voiceChannel) console.log('[FINALIZAR] ERRO: Voice channel do evento não encontrado!');
     }
 
     // Converter canal de voz em canal de texto e mover para encerrados
@@ -651,7 +649,7 @@ class EventActions {
 
       const embed = new EmbedBuilder()
         .setTitle(`🏆 **${event.nome}** - FINALIZADO`)
-        .setDescription(`Evento finalizado por ${interaction.user}\n📁 Canal arquivado em <#${canalEncerradoId || 'desconhecido'}>\n👥 ${movidos} participantes movidos para aguardando-evento`)
+        .setDescription(`Evento finalizado por ${interaction.user}\n📁 Canal arquivado em <#${canalEncerradoId || 'desconhecido'}>\n👥 ${movidos} participantes movidos para 🔊╠Aguardando-Evento`)
         .setColor(0x57F287)
         .setTimestamp();
 
@@ -664,7 +662,7 @@ class EventActions {
     EventActions.activeEvents.delete(eventId);
 
     await interaction.reply({
-      content: `✅ Evento **${event.nome}** finalizado!\n📁 Canal convertido para texto.\n👥 **${movidos}** participantes movidos para aguardando-evento.\n💰 Painel de lootsplit criado.`,
+      content: `✅ Evento **${event.nome}** finalizado!\n📁 Canal convertido para texto.\n👥 **${movidos}** participantes movidos para 🔊╠Aguardando-Evento.\n💰 Painel de lootsplit criado.`,
       ephemeral: true
     });
   }
