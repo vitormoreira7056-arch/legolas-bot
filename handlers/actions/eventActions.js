@@ -224,7 +224,7 @@ class EventActions {
       console.error('Erro ao atualizar mensagem:', error);
     }
 
-    // Montar mensagem de resposta
+    // 🆕 CORREÇÃO: Montar mensagem de resposta detalhada
     let msgResposta = `▶️ Evento **${event.nome}** iniciado!\n\n`;
     msgResposta += `✅ **${movidos}** participante(s) movido(s) para o canal de voz.\n`;
     
