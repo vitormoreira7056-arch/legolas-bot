@@ -186,7 +186,7 @@ class EventActions {
     // 🆕 CORREÇÃO: Mover todos os participantes para o canal de voz automaticamente
     let movidos = 0;
     let naoMovidos = [];
-    
+
     try {
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId);
       if (voiceChannel) {
@@ -227,7 +227,7 @@ class EventActions {
     // 🆕 CORREÇÃO: Montar mensagem de resposta detalhada
     let msgResposta = `▶️ Evento **${event.nome}** iniciado!\n\n`;
     msgResposta += `✅ **${movidos}** participante(s) movido(s) para o canal de voz.\n`;
-    
+
     if (naoMovidos.length > 0) {
       msgResposta += `⚠️ **${naoMovidos.length}** não movido(s) (não estavam em canal de voz): ${naoMovidos.join(', ')}\n`;
       msgResposta += `🔊 Entre em qualquer canal de voz para ser movido automaticamente.`;
