@@ -3,17 +3,19 @@ const path = require('path');
 const ConfigHandler = require('./configHandler');
 
 class LootSplitCore {
-  static calcularDivisao(evento, valorTotal, ajustes = {}) {
+  // 🆕 ATUALIZADO: Aceita valorReparo como parâmetro
+  static calcularDivisao(evento, valorTotal, valorReparo = 0, ajustes = {}) {
     const config = ConfigHandler.getConfig(evento.guildId) || {};
-    // 🆕 CORREÇÃO: Usar taxaGuilda (nome correto)
     const taxaPercentual = config.taxaGuilda || 10;
-    const valorTaxa = Math.floor(valorTotal * (taxaPercentual / 100));
-    const valorLiquido = valorTotal - valorTaxa;
+    
+    // 🆕 NOVO: Subtrair reparo do valor total antes de calcular taxa e divisão
+    const valorAposReparo = Math.max(0, valorTotal - valorReparo);
+    const valorTaxa = Math.floor(valorAposReparo * (taxaPercentual / 100));
+    const valorLiquido = valorAposReparo - valorTaxa;
 
     const participantes = [];
     let tempoTotal = 0;
 
-    // Pegar participações
     const participacoes = evento.participacaoIndividual || new Map();
     
     for (const [userId, part] of participacoes) {
@@ -27,11 +29,10 @@ class LootSplitCore {
       tempoTotal += tempo;
     }
 
-    // Calcular distribuição
     const distribuicao = {};
     for (const p of participantes) {
       const porcentagem = tempoTotal > 0 ? (p.tempo / tempoTotal) : (1 / participantes.length);
-      const ajuste = ajustes[p.userId] || 100; // 100% = valor normal
+      const ajuste = ajustes[p.userId] || 100;
       const valorBase = valorLiquido * porcentagem;
       const valorAjustado = Math.floor(valorBase * (ajuste / 100));
       
@@ -47,6 +48,7 @@ class LootSplitCore {
 
     return {
       valorTotal,
+      valorReparo, // 🆕 NOVO: Retornar valor do reparo
       taxa: valorTaxa,
       taxaPercentual,
       valorDistribuir: valorLiquido,
@@ -62,7 +64,8 @@ class LootSplitCore {
     return `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
   }
 
-  static async salvarSimulacao(evento, resultado) {
+  // 🆕 ATUALIZADO: Aceita valorReparo
+  static async salvarSimulacao(evento, resultado, valorReparo = 0) {
     const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
     let dados = {};
     
@@ -84,6 +87,7 @@ class LootSplitCore {
         participantes: Array.from(evento.participacaoIndividual?.entries() || [])
       },
       resultado,
+      valorReparo, // 🆕 NOVO: Salvar reparo
       finalizado: false,
       data: new Date().toISOString()
     };
@@ -107,7 +111,6 @@ class LootSplitCore {
   }
 
   static async finalizarSplit(evento, resultado, interaction) {
-    // Marcar como finalizado
     const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
     
     try {
@@ -121,7 +124,6 @@ class LootSplitCore {
       console.error('Erro ao finalizar:', e);
     }
 
-    // Aqui você pode adicionar lógica de pagamento automático se quiser
     return true;
   }
 }
