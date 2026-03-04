@@ -4,16 +4,13 @@ const ConfigHandler = require('./configHandler');
 class LootSplitUI {
   static createFinishedEventPanel(evento, duracaoTotalMs) {
     const config = ConfigHandler.getConfig(evento.guildId) || {};
-    // 🆕 CORREÇÃO: Usar taxaGuilda (nome correto da propriedade)
     const taxaGuilda = config.taxaGuilda || 10;
 
-    // Calcular duração total formatada
     const duracaoHoras = Math.floor(duracaoTotalMs / (1000 * 60 * 60));
     const duracaoMinutos = Math.floor((duracaoTotalMs % (1000 * 60 * 60)) / (1000 * 60));
     const duracaoSegundos = Math.floor((duracaoTotalMs % (1000 * 60)) / 1000);
     const duracaoFormatada = `${duracaoHoras.toString().padStart(2, '0')}:${duracaoMinutos.toString().padStart(2, '0')}:${duracaoSegundos.toString().padStart(2, '0')}`;
 
-    // Calcular quando o evento começou
     const inicioEvento = evento.iniciadoEm || evento.criadoEm || Date.now();
     const tempoDesdeInicio = Date.now() - inicioEvento;
     const horasDesdeInicio = Math.floor(tempoDesdeInicio / (1000 * 60 * 60));
@@ -22,7 +19,6 @@ class LootSplitUI {
     let tempoTotalParticipacao = 0;
     const participantesDetalhados = [];
 
-    // Suportar tanto presenceData (novo) quanto participacaoIndividual (legado)
     const participacoes = evento.participacaoIndividual ||
       (evento.presenceData ? new Map(Object.entries(evento.presenceData.participants || {})) : new Map());
 
@@ -50,7 +46,6 @@ class LootSplitUI {
       }
     }
 
-    // Adicionar participantes que estão na lista mas não têm tempo registrado
     if (evento.participantes && evento.participantes.length > 0) {
       for (const userId of evento.participantes) {
         if (!participantesDetalhados.find(p => p.userId === userId)) {
@@ -67,10 +62,8 @@ class LootSplitUI {
 
     participantesDetalhados.sort((a, b) => b.tempoMs - a.tempoMs);
 
-    // Criar lista formatada com campos individuais
     const fields = [];
     
-    // Adicionar campo de informações gerais
     fields.push({
       name: '📊 INFORMAÇÕES GERAIS',
       value: 
@@ -81,7 +74,6 @@ class LootSplitUI {
       inline: false
     });
 
-    // Lista de participantes em grupos (limite 1024 chars por campo)
     if (participantesDetalhados.length > 0) {
       let descricaoParticipantes = '';
       let numeroCampo = 1;
@@ -92,7 +84,6 @@ class LootSplitUI {
         
         const linha = `${medalha} <@${p.userId}> **${p.nickname}**\n   ⏱️ ${p.tempoFormatado} (${p.porcentagem}%)\n\n`;
         
-        // Se passar de 1024 caracteres, criar novo campo
         if ((descricaoParticipantes + linha).length > 1024) {
           fields.push({
             name: `👥 PARTICIPANTES ${numeroCampo > 1 ? `(CONT. ${numeroCampo})` : ''}`,
@@ -106,7 +97,6 @@ class LootSplitUI {
         }
       }
 
-      // Adicionar último campo se houver conteúdo
       if (descricaoParticipantes) {
         fields.push({
           name: `👥 PARTICIPANTES ${numeroCampo > 1 ? `(CONT. ${numeroCampo})` : ''}`,
@@ -128,7 +118,6 @@ class LootSplitUI {
       .setColor(0xF1C40F)
       .setTimestamp();
 
-    // Adicionar todos os campos
     embed.addFields(fields);
     
     embed.setFooter({ 
@@ -138,7 +127,7 @@ class LootSplitUI {
     const botoes = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
-          .setCustomId(`simular_loot_${evento.id}`)
+          .setCustomId(`simulate_loot_${evento.id}`)
           .setLabel('🧮 Simular Lootsplit')
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
@@ -154,6 +143,7 @@ class LootSplitUI {
     return { embeds: [embed], components: [botoes] };
   }
 
+  // 🆕 ATUALIZADO: Modal com campo de reparo
   static createSimulationModal(eventId) {
     const modal = new ModalBuilder()
       .setCustomId(`modal_simulate_${eventId}`)
@@ -161,10 +151,18 @@ class LootSplitUI {
 
     const valorInput = new TextInputBuilder()
       .setCustomId('valor_total')
-      .setLabel('💰 Valor total do loot (em silver)')
+      .setLabel('💰 Valor total do loot (silver)')
       .setPlaceholder('Ex: 5000000')
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
+      .setMaxLength(12);
+
+    const reparoInput = new TextInputBuilder()
+      .setCustomId('valor_reparo')
+      .setLabel('🔧 Valor do reparo (será descontado)')
+      .setPlaceholder('Ex: 150000 (deixe 0 se não houver)')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(false)
       .setMaxLength(12);
 
     const ajusteInput = new TextInputBuilder()
@@ -177,6 +175,7 @@ class LootSplitUI {
 
     return modal.addComponents(
       new ActionRowBuilder().addComponents(valorInput),
+      new ActionRowBuilder().addComponents(reparoInput),
       new ActionRowBuilder().addComponents(ajusteInput)
     );
   }
@@ -198,27 +197,35 @@ class LootSplitUI {
     );
   }
 
-  static createSimulationResultEmbed(evento, valorTotal, resultado) {
+  // 🆕 ATUALIZADO: Mostrar valor do reparo no resultado
+  static createSimulationResultEmbed(evento, valorTotal, valorReparo, resultado) {
     const config = ConfigHandler.getConfig(evento.guildId) || {};
-    // 🆕 CORREÇÃO: Usar taxaGuilda aqui também
     const taxaPercentual = config.taxaGuilda || 10;
-    const valorTaxa = Math.floor(valorTotal * (taxaPercentual / 100));
-    const valorLiquido = valorTotal - valorTaxa;
+    
+    // Valor após descontar reparo
+    const valorAposReparo = valorTotal - valorReparo;
+    const valorTaxa = Math.floor(valorAposReparo * (taxaPercentual / 100));
+    const valorLiquido = valorAposReparo - valorTaxa;
+
+    let descricao = `**💰 Valor Total do Loot:** 🪙 ${valorTotal.toLocaleString()}\n`;
+    
+    if (valorReparo > 0) {
+      descricao += `**🔧 Reparo:** -🪙 ${valorReparo.toLocaleString()}\n`;
+      descricao += `**💵 Valor Líquido:** 🪙 ${valorAposReparo.toLocaleString()}\n`;
+    }
+    
+    descricao += `**💸 Taxa Guilda (${taxaPercentual}%):** -🪙 ${valorTaxa.toLocaleString()}\n`;
+    descricao += `**💎 Total a Dividir:** 🪙 ${valorLiquido.toLocaleString()}\n\n`;
+    descricao += `**📊 DIVISÃO POR PARTICIPANTE:**`;
 
     const embed = new EmbedBuilder()
       .setTitle(`🧮 **SIMULAÇÃO DE LOOTSPLIT**`)
-      .setDescription(
-        `**💰 Valor Total:** 🪙 ${valorTotal.toLocaleString()}\n` +
-        `**💸 Taxa Guilda (${taxaPercentual}%):** 🪙 ${valorTaxa.toLocaleString()}\n` +
-        `**💵 Valor Líquido:** 🪙 ${valorLiquido.toLocaleString()}\n\n` +
-        `**📊 DIVISÃO POR PARTICIPANTE:**`
-      )
+      .setDescription(descricao)
       .setColor(0x2ECC71)
       .setTimestamp();
 
     const campos = [];
     
-    // Verificar se resultado é um objeto válido
     const distribuicao = resultado?.distribuicao || resultado || {};
     
     for (const [userId, dados] of Object.entries(distribuicao)) {
