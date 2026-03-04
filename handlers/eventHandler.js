@@ -1,5 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, ChannelType } = require('discord.js');
-const EventActions = require('./actions/eventActions');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits } = require('discord.js');
 
 class EventHandler {
   static getEventTypeName(tipo) {
@@ -7,7 +6,7 @@ class EventHandler {
       'raid_avalon': '🏰 Raid Avalon',
       'gank': '⚔️ Gank',
       'bau_dourado': '💰 Baú Dourado',
-      'custom': '⚔️ Evento Personalizado'
+      'custom': '📝 Personalizado'
     };
     return nomes[tipo] || '⚔️ Evento';
   }
@@ -17,12 +16,12 @@ class EventHandler {
 
     const modal = new ModalBuilder()
       .setCustomId('modal_evento_custom')
-      .setTitle('📝 Criar Evento Personalizado');
+      .setTitle('📝 Criar Evento');
 
     const nomeInput = new TextInputBuilder()
       .setCustomId('evt_nome')
       .setLabel('Nome do Evento')
-      .setPlaceholder('Ex: Gank de Brecilien')
+      .setPlaceholder('Ex: Gank Brecilien')
       .setStyle(TextInputStyle.Short)
       .setRequired(true)
       .setMaxLength(50);
@@ -30,7 +29,7 @@ class EventHandler {
     const descInput = new TextInputBuilder()
       .setCustomId('evt_desc')
       .setLabel('Descrição')
-      .setPlaceholder('Descreva o evento...')
+      .setPlaceholder('Detalhes do evento...')
       .setStyle(TextInputStyle.Paragraph)
       .setRequired(false)
       .setMaxLength(500);
@@ -38,24 +37,25 @@ class EventHandler {
     const reqInput = new TextInputBuilder()
       .setCustomId('evt_req')
       .setLabel('Requisitos')
-      .setPlaceholder('Ex: IP 1300+, Montaria 8.3')
+      .setPlaceholder('IP 1300+, Montaria 8.3')
       .setStyle(TextInputStyle.Paragraph)
       .setRequired(false)
       .setMaxLength(200);
 
     const horarioInput = new TextInputBuilder()
       .setCustomId('evt_horario')
-      .setLabel('Horário de Início')
-      .setPlaceholder('Ex: 21:00 BRT')
+      .setLabel('Horário')
+      .setPlaceholder('21:00 BRT')
       .setStyle(TextInputStyle.Short)
       .setRequired(true);
 
-    const row1 = new ActionRowBuilder().addComponents(nomeInput);
-    const row2 = new ActionRowBuilder().addComponents(descInput);
-    const row3 = new ActionRowBuilder().addComponents(reqInput);
-    const row4 = new ActionRowBuilder().addComponents(horarioInput);
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(nomeInput),
+      new ActionRowBuilder().addComponents(descInput),
+      new ActionRowBuilder().addComponents(reqInput),
+      new ActionRowBuilder().addComponents(horarioInput)
+    );
 
-    modal.addComponents(row1, row2, row3, row4);
     return modal;
   }
 
@@ -68,16 +68,14 @@ class EventHandler {
 
     const descInput = new TextInputBuilder()
       .setCustomId('evt_desc')
-      .setLabel('Descrição/Detalhes')
-      .setPlaceholder('Detalhes específicos do evento...')
+      .setLabel('Descrição')
       .setStyle(TextInputStyle.Paragraph)
       .setRequired(false)
       .setMaxLength(500);
 
     const reqInput = new TextInputBuilder()
       .setCustomId('evt_req')
-      .setLabel('Requisitos Específicos')
-      .setPlaceholder('Requisitos adicionais...')
+      .setLabel('Requisitos')
       .setStyle(TextInputStyle.Paragraph)
       .setRequired(false)
       .setMaxLength(200);
@@ -85,39 +83,34 @@ class EventHandler {
     const horarioInput = new TextInputBuilder()
       .setCustomId('evt_horario')
       .setLabel('Horário')
-      .setPlaceholder('Ex: 21:00')
+      .setPlaceholder('21:00')
       .setStyle(TextInputStyle.Short)
       .setRequired(true);
 
     const vagasInput = new TextInputBuilder()
       .setCustomId('evt_vagas')
-      .setLabel('Limite de Vagas (opcional)')
-      .setPlaceholder('Ex: 20 (deixe em branco para ilimitado)')
+      .setLabel('Vagas (opcional)')
+      .setPlaceholder('20')
       .setStyle(TextInputStyle.Short)
       .setRequired(false);
 
-    const row1 = new ActionRowBuilder().addComponents(descInput);
-    const row2 = new ActionRowBuilder().addComponents(reqInput);
-    const row3 = new ActionRowBuilder().addComponents(horarioInput);
-    const row4 = new ActionRowBuilder().addComponents(vagasInput);
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(descInput),
+      new ActionRowBuilder().addComponents(reqInput),
+      new ActionRowBuilder().addComponents(horarioInput),
+      new ActionRowBuilder().addComponents(vagasInput)
+    );
 
-    modal.addComponents(row1, row2, row3, row4);
     return modal;
   }
 
   static async createEvent(interaction, eventData) {
     const guild = interaction.guild;
-
     const categoriaEventos = guild.channels.cache.find(c => c.name === '⚔️ EVENTOS ATIVOS' && c.type === 4);
     const canalParticipar = guild.channels.cache.find(c => c.name === '👋╠participar');
 
-    if (!categoriaEventos) {
-      throw new Error('Categoria ⚔️ EVENTOS ATIVOS não encontrada! Execute /instalar primeiro.');
-    }
-
-    if (!canalParticipar) {
-      throw new Error('Canal 👋╠participar não encontrado! Execute /instalar primeiro.');
-    }
+    if (!categoriaEventos) throw new Error('Categoria ⚔️ EVENTOS ATIVOS não encontrada!');
+    if (!canalParticipar) throw new Error('Canal 👋╠participar não encontrado!');
 
     const eventId = `evt_${Date.now()}_${interaction.user.id}`;
 
@@ -148,7 +141,8 @@ class EventHandler {
       painelMessageId: null
     };
 
-    // Usar o Map compartilhado do EventActions
+    // Usar EventActions.activeEvents
+    const EventActions = require('./actions/eventActions');
     EventActions.activeEvents.set(eventId, evento);
 
     const embed = this.createEventEmbed(evento, interaction.member);
@@ -158,7 +152,7 @@ class EventHandler {
     const mentionText = membroRole ? `<@&${membroRole.id}>` : '@everyone';
 
     const painelMessage = await canalParticipar.send({
-      content: `📢 ${mentionText} Novo evento criado!`,
+      content: `📢 ${mentionText} Novo evento!`,
       embeds: [embed],
       components: buttons
     });
@@ -178,11 +172,11 @@ class EventHandler {
     };
 
     const statusColors = {
-      'aguardando': 0x3498DB,
-      'em_andamento': 0xE74C3C,
-      'pausado': 0xF39C12,
-      'encerrado': 0x2ECC71,
-      'cancelado': 0x95A5A6
+      'aguardando': 0x5865F2,
+      'em_andamento': 0xED4245,
+      'pausado': 0xFEE75C,
+      'encerrado': 0x57F287,
+      'cancelado': 0x99AAB5
     };
 
     const statusLabels = {
@@ -193,61 +187,55 @@ class EventHandler {
       'cancelado': 'CANCELADO'
     };
 
-    const numParticipantes = evento.participantes ? evento.participantes.length : 0;
+    const numParticipantes = evento.participantes?.length || 0;
     const vagasText = evento.vagas ? `/${evento.vagas}` : '';
+    const trancadoText = evento.trancado ? ' 🔒 TRANCADO' : '';
 
     const embed = new EmbedBuilder()
-      .setTitle(`${statusEmojis[evento.status] || '⏳'} **${evento.nome}**`)
+      .setTitle(`${statusEmojis[evento.status]} **${evento.nome}**`)
       .setDescription(evento.descricao || 'Sem descrição')
-      .setColor(statusColors[evento.status] || 0x3498DB)
+      .setColor(statusColors[evento.status])
       .addFields(
         { name: '👤 Criador', value: `<@${evento.criadorId}>`, inline: true },
         { name: '🕐 Horário', value: evento.horario, inline: true },
         { name: '👥 Participantes', value: `${numParticipantes}${vagasText}`, inline: true },
-        { name: '🔊 Canal de Voz', value: `<#${evento.voiceChannelId}>`, inline: false }
+        { name: '🔊 Canal', value: `<#${evento.voiceChannelId}>`, inline: false }
       );
 
     if (evento.requisitos) {
       embed.addFields({ name: '📋 Requisitos', value: evento.requisitos, inline: false });
     }
 
-    // Mostrar lista de participantes
     if (numParticipantes > 0) {
       const lista = evento.participantes.map(id => `<@${id}>`).join(', ');
-      embed.addFields({ 
-        name: `🎮 Participantes (${numParticipantes})`, 
-        value: lista.length > 1024 ? lista.substring(0, 1021) + '...' : lista, 
-        inline: false 
+      embed.addFields({
+        name: `🎮 Participantes (${numParticipantes})`,
+        value: lista.length > 1024 ? lista.substring(0, 1021) + '...' : lista,
+        inline: false
       });
     }
 
-    const statusText = statusLabels[evento.status] || evento.status.toUpperCase();
-    embed.setFooter({ 
-      text: `ID: ${evento.id} • Status: ${statusText}${evento.trancado ? ' 🔒 TRANCADO' : ''}` 
+    embed.setFooter({
+      text: `ID: ${evento.id} • ${statusLabels[evento.status]}${trancadoText}`
     });
     embed.setTimestamp();
 
     return embed;
   }
 
+  // 🆕 MÉTODO PRINCIPAL: Criar botões baseado no status atual do evento
   static createEventButtonsByStatus(evento) {
     const eventId = evento.id;
     const status = evento.status;
     const trancado = evento.trancado;
     const rows = [];
 
-    // Linha 1: Participar / Pausar/Retomar
-    if (status !== 'encerrado' && status !== 'cancelado') {
-      const row1 = new ActionRowBuilder();
-
-      if (!trancado) {
-        row1.addComponents(
-          new ButtonBuilder()
-            .setCustomId(`evt_participar_${eventId}`)
-            .setLabel('✅ Participar')
-            .setStyle(ButtonStyle.Success)
-        );
-      } else {
+    // ==================== LINHA 1: PARTICIPAR ====================
+    const row1 = new ActionRowBuilder();
+    
+    if (status === 'aguardando' || status === 'em_andamento' || status === 'pausado') {
+      if (trancado) {
+        // Evento trancado - botão desabilitado
         row1.addComponents(
           new ButtonBuilder()
             .setCustomId(`evt_participar_${eventId}`)
@@ -255,79 +243,95 @@ class EventHandler {
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(true)
         );
+      } else {
+        // Evento aberto - pode participar
+        row1.addComponents(
+          new ButtonBuilder()
+            .setCustomId(`evt_participar_${eventId}`)
+            .setLabel('✅ Participar')
+            .setStyle(ButtonStyle.Success)
+        );
       }
 
+      // Botão Sair/Pausar (apenas quando em andamento)
       if (status === 'em_andamento') {
         row1.addComponents(
           new ButtonBuilder()
             .setCustomId(`evt_voltar_${eventId}`)
-            .setLabel('⏸️ Sair/Pausar')
+            .setLabel('⏸️ Sair do Evento')
             .setStyle(ButtonStyle.Secondary)
         );
       }
+    }
+    
+    if (row1.components.length > 0) rows.push(row1);
 
-      rows.push(row1);
+    // ==================== LINHA 2: CONTROLES ADMIN ====================
+    const row2 = new ActionRowBuilder();
+    let temBotaoAdmin = false;
+
+    if (status === 'aguardando') {
+      // Status: Aguardando → Mostrar: Iniciar, Cancelar
+      row2.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`evt_iniciar_${eventId}`)
+          .setLabel('▶️ Iniciar Evento')
+          .setStyle(ButtonStyle.Primary)
+      );
+      row2.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`evt_cancelar_${eventId}`)
+          .setLabel('❌ Cancelar')
+          .setStyle(ButtonStyle.Danger)
+      );
+      temBotaoAdmin = true;
+      
+    } else if (status === 'em_andamento') {
+      // Status: Em Andamento → Mostrar: Pausar, Finalizar (Iniciar vira Pausar, Cancelar vira Finalizar)
+      row2.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`evt_pausar_${eventId}`)
+          .setLabel('⏸️ Pausar Evento')
+          .setStyle(ButtonStyle.Secondary)
+      );
+      row2.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`evt_finalizar_${eventId}`)
+          .setLabel('🏁 Finalizar Evento')
+          .setStyle(ButtonStyle.Danger)
+      );
+      temBotaoAdmin = true;
+      
+    } else if (status === 'pausado') {
+      // Status: Pausado → Mostrar: Retomar, Finalizar
+      row2.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`evt_iniciar_${eventId}`)
+          .setLabel('▶️ Retomar Evento')
+          .setStyle(ButtonStyle.Primary)
+      );
+      row2.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`evt_finalizar_${eventId}`)
+          .setLabel('🏁 Finalizar Evento')
+          .setStyle(ButtonStyle.Danger)
+      );
+      temBotaoAdmin = true;
     }
 
-    // Linha 2: Controles Admin
-    if (status !== 'encerrado' && status !== 'cancelado') {
-      const row2 = new ActionRowBuilder();
+    if (temBotaoAdmin) rows.push(row2);
 
-      if (status === 'aguardando') {
-        row2.addComponents(
-          new ButtonBuilder()
-            .setCustomId(`evt_iniciar_${eventId}`)
-            .setLabel('▶️ Iniciar')
-            .setStyle(ButtonStyle.Primary)
-        );
-        row2.addComponents(
-          new ButtonBuilder()
-            .setCustomId(`evt_cancelar_${eventId}`)
-            .setLabel('❌ Cancelar')
-            .setStyle(ButtonStyle.Danger)
-        );
-      } else if (status === 'em_andamento') {
-        row2.addComponents(
-          new ButtonBuilder()
-            .setCustomId(`evt_pausar_${eventId}`)
-            .setLabel('⏸️ Pausar')
-            .setStyle(ButtonStyle.Secondary)
-        );
-        row2.addComponents(
-          new ButtonBuilder()
-            .setCustomId(`evt_finalizar_${eventId}`)
-            .setLabel('🏁 Finalizar')
-            .setStyle(ButtonStyle.Danger)
-        );
-      } else if (status === 'pausado') {
-        row2.addComponents(
-          new ButtonBuilder()
-            .setCustomId(`evt_iniciar_${eventId}`)
-            .setLabel('▶️ Retomar')
-            .setStyle(ButtonStyle.Primary)
-        );
-        row2.addComponents(
-          new ButtonBuilder()
-            .setCustomId(`evt_finalizar_${eventId}`)
-            .setLabel('🏁 Finalizar')
-            .setStyle(ButtonStyle.Danger)
-        );
-      }
-
-      rows.push(row2);
-    }
-
-    // Linha 3: Trancar/Destrancar
-    if (status !== 'encerrado' && status !== 'cancelado' && status !== 'cancelado') {
+    // ==================== LINHA 3: TRANCAR/DESTRANCAR ====================
+    if (status === 'aguardando' || status === 'em_andamento' || status === 'pausado') {
       const row3 = new ActionRowBuilder();
-
+      
       row3.addComponents(
         new ButtonBuilder()
           .setCustomId(trancado ? `evt_destrancar_${eventId}` : `evt_trancar_${eventId}`)
-          .setLabel(trancado ? '🔓 Destrancar' : '🔒 Trancar')
+          .setLabel(trancado ? '🔓 Destrancar' : '🔒 Trancar Evento')
           .setStyle(trancado ? ButtonStyle.Success : ButtonStyle.Secondary)
       );
-
+      
       rows.push(row3);
     }
 
