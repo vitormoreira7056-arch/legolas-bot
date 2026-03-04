@@ -1,311 +1,267 @@
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, PermissionFlagsBits } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const LootSplitCore = require('./lootSplitCore');
+const LootSplitUI = require('./lootSplitUI');
+const EventActions = require('./actions/eventActions');
+const EventStatsHandler = require('./eventStatsHandler');
 
-class EventStatsHandler {
-  static statsFile = path.join(__dirname, '..', 'data', 'eventStats.json');
-  static messageIdFile = path.join(__dirname, '..', 'data', 'eventStatsMessage.json');
-
-  // Estrutura: { userId: { events: [{eventId, date, name}], totalParticipated: 0 } }
-  static stats = new Map();
-  static currentFilter = 'total'; // Filtro atual do painel
-
-  static loadStats() {
+class LootSplitHandler {
+  static async processSimulation(interaction, eventId) {
     try {
-      if (fs.existsSync(this.statsFile)) {
-        const data = JSON.parse(fs.readFileSync(this.statsFile, 'utf8'));
-        this.stats = new Map(Object.entries(data));
-        console.log('✅ Estatísticas de eventos carregadas');
-      }
-    } catch (error) {
-      console.error('Erro ao carregar stats:', error);
-      this.stats = new Map();
-    }
-  }
-
-  static saveStats() {
-    try {
-      const dir = path.dirname(this.statsFile);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(this.statsFile, JSON.stringify(Object.fromEntries(this.stats), null, 2));
-    } catch (error) {
-      console.error('Erro ao salvar stats:', error);
-    }
-  }
-
-  static saveMessageId(channelId, messageId) {
-    try {
-      const dir = path.dirname(this.messageIdFile);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(this.messageIdFile, JSON.stringify({ channelId, messageId, filter: this.currentFilter }));
-    } catch (error) {
-      console.error('Erro ao salvar messageId:', error);
-    }
-  }
-
-  static loadMessageId() {
-    try {
-      if (fs.existsSync(this.messageIdFile)) {
-        return JSON.parse(fs.readFileSync(this.messageIdFile, 'utf8'));
-      }
-    } catch (error) {
-      console.error('Erro ao carregar messageId:', error);
-    }
-    return null;
-  }
-
-  // Registrar participação em evento
-  static registerEventParticipation(userId, eventId, eventName) {
-    if (!this.stats.has(userId)) {
-      this.stats.set(userId, { events: [], totalParticipated: 0 });
-    }
-
-    const userStats = this.stats.get(userId);
-
-    // Verificar se já registrou este evento específico
-    const alreadyRegistered = userStats.events.some(e => e.eventId === eventId);
-    if (alreadyRegistered) return;
-
-    userStats.events.push({
-      eventId,
-      date: new Date().toISOString(),
-      name: eventName
-    });
-    userStats.totalParticipated = userStats.events.length;
-
-    this.saveStats();
-  }
-
-  // Calcular quantidade de eventos no período
-  static getEventsInPeriod(userId, period) {
-    const userStats = this.stats.get(userId);
-    if (!userStats) return { participated: 0, total: this.getTotalEvents() };
-
-    const now = Date.now();
-    const periods = {
-      '7d': 7 * 24 * 60 * 60 * 1000,
-      '2w': 14 * 24 * 60 * 60 * 1000,
-      '1m': 30 * 24 * 60 * 60 * 1000,
-      '3m': 90 * 24 * 60 * 60 * 1000,
-      '8m': 240 * 24 * 60 * 60 * 1000,
-      '1y': 365 * 24 * 60 * 60 * 1000,
-      'total': Infinity
-    };
-
-    const timeLimit = periods[period] || Infinity;
-
-    const participatedInPeriod = userStats.events.filter(e => {
-      const eventDate = new Date(e.date).getTime();
-      return (now - eventDate) <= timeLimit;
-    }).length;
-
-    // Total de eventos no período (todos os eventos criados no período)
-    const totalInPeriod = this.getTotalEventsInPeriod(timeLimit);
-
-    return {
-      participated: participatedInPeriod,
-      total: totalInPeriod === 0 ? participatedInPeriod : totalInPeriod // Evitar divisão por zero
-    };
-  }
-
-  static getTotalEvents() {
-    // Contar todos os eventos únicos já registrados
-    const allEventIds = new Set();
-    for (const userData of this.stats.values()) {
-      userData.events.forEach(e => allEventIds.add(e.eventId));
-    }
-    return allEventIds.size;
-  }
-
-  static getTotalEventsInPeriod(timeLimit) {
-    const now = Date.now();
-    const allEventIds = new Set();
-
-    for (const userData of this.stats.values()) {
-      userData.events.forEach(e => {
-        const eventDate = new Date(e.date).getTime();
-        if ((now - eventDate) <= timeLimit) {
-          allEventIds.add(e.eventId);
-        }
-      });
-    }
-    return allEventIds.size;
-  }
-
-  static createFilterSelectMenu() {
-    const options = [
-      new StringSelectMenuOptionBuilder().setLabel('Últimos 7 dias').setValue('7d').setDescription('Eventos dos últimos 7 dias').setEmoji('📅'),
-      new StringSelectMenuOptionBuilder().setLabel('Últimas 2 semanas').setValue('2w').setDescription('Eventos das últimas 2 semanas').setEmoji('📆'),
-      new StringSelectMenuOptionBuilder().setLabel('Último mês').setValue('1m').setDescription('Eventos do último mês').setEmoji('🗓️'),
-      new StringSelectMenuOptionBuilder().setLabel('Últimos 3 meses').setValue('3m').setDescription('Eventos dos últimos 3 meses').setEmoji('📊'),
-      new StringSelectMenuOptionBuilder().setLabel('Últimos 8 meses').setValue('8m').setDescription('Eventos dos últimos 8 meses').setEmoji('📈'),
-      new StringSelectMenuOptionBuilder().setLabel('Último ano').setValue('1y').setDescription('Eventos do último ano').setEmoji('📉'),
-      new StringSelectMenuOptionBuilder().setLabel('Total (Todos)').setValue('total').setDescription('Todos os eventos').setEmoji('🔢'),
-    ];
-
-    return new StringSelectMenuBuilder()
-      .setCustomId('event_stats_filter')
-      .setPlaceholder('Selecione o período para filtrar...')
-      .addOptions(options);
-  }
-
-  static async generateStatsEmbed(guild, filter = 'total') {
-    this.currentFilter = filter;
-
-    const filterNames = {
-      '7d': 'Últimos 7 dias',
-      '2w': 'Últimas 2 semanas',
-      '1m': 'Último mês',
-      '3m': 'Últimos 3 meses',
-      '8m': 'Últimos 8 meses',
-      '1y': 'Último ano',
-      'total': 'Total Geral'
-    };
-
-    const embed = new EmbedBuilder()
-      .setTitle('📊 **PAINEL DE EVENTOS - ESTATÍSTICAS**')
-      .setDescription(`> Participação dos membros em eventos da guilda\n> **Período:** ${filterNames[filter]}\n\u200B`)
-      .setColor(0x3498DB)
-      .setThumbnail(guild.iconURL({ dynamic: true }))
-      .setFooter({ text: 'Atualizado automaticamente • Use o menu abaixo para filtrar' })
-      .setTimestamp();
-
-    // Buscar todos os membros com cargos relevantes (NOTAG, Member Evento, Staff, etc.)
-    const relevantRoles = ['NOTAG', 'Member Evento', 'Staff', 'ADM', 'Caller', 'ALIANÇA'];
-    const trackedMembers = [];
-
-    for (const member of guild.members.cache.values()) {
-      const hasRelevantRole = member.roles.cache.some(r => relevantRoles.includes(r.name));
-      if (hasRelevantRole && !member.user.bot) {
-        const stats = this.getEventsInPeriod(member.id, filter);
-        trackedMembers.push({
-          member,
-          participated: stats.participated,
-          total: stats.total,
-          percentage: stats.total > 0 ? Math.round((stats.participated / stats.total) * 100) : 0
+      const valorInput = interaction.fields.getTextInputValue('valor_total');
+      const ajustesInput = interaction.fields.getTextInputValue('ajustes') || '';
+      
+      const valorTotal = parseInt(valorInput.replace(/\D/g, ''));
+      
+      if (isNaN(valorTotal) || valorTotal <= 0) {
+        return interaction.reply({
+          content: '❌ Valor inválido! Digite um número maior que 0.',
+          ephemeral: true
         });
       }
-    }
 
-    // Ordenar por quantidade de eventos participados (decrescente)
-    trackedMembers.sort((a, b) => b.participated - a.participated);
-
-    if (trackedMembers.length === 0) {
-      embed.addFields({ name: '👥 Membros', value: '*Nenhum membro registrado ainda*', inline: false });
-    } else {
-      // Dividir em grupos de 20 para não ultrapassar limite de caracteres
-      let currentField = '';
-      let fieldCount = 0;
-
-      for (let i = 0; i < trackedMembers.length; i++) {
-        const tm = trackedMembers[i];
-        const line = `${i + 1}. ${tm.member.displayName}: **${tm.participated}/${tm.total}** (${tm.percentage}%)\n`;
-
-        if ((currentField + line).length > 1024) {
-          embed.addFields({ 
-            name: fieldCount === 0 ? `👥 Membros (${trackedMembers.length})` : '\u200B', 
-            value: currentField || '*Dados...*', 
-            inline: false 
-          });
-          currentField = line;
-          fieldCount++;
-        } else {
-          currentField += line;
+      const ajustes = {};
+      if (ajustesInput) {
+        const linhas = ajustesInput.split(/[\n,]/);
+        for (const linha of linhas) {
+          const match = linha.match(/<@!?(\d+)>:(\d+)/) || linha.match(/(\d{17,19}):(\d+)/);
+          if (match) {
+            ajustes[match[1]] = parseInt(match[2]);
+          }
         }
       }
 
-      if (currentField) {
-        embed.addFields({ 
-          name: fieldCount === 0 ? `👥 Membros (${trackedMembers.length})` : '\u200B', 
-          value: currentField, 
-          inline: false 
+      let evento = EventActions.activeEvents.get(eventId);
+      
+      if (!evento) {
+        const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
+        if (stats) {
+          evento = {
+            ...stats,
+            participacaoIndividual: new Map(Object.entries(stats.participacaoIndividual || {}))
+          };
+        }
+      }
+
+      if (!evento) {
+        return interaction.reply({
+          content: '❌ Evento não encontrado!',
+          ephemeral: true
         });
       }
-    }
 
-    // Estatísticas gerais
-    const totalEvents = this.getTotalEventsInPeriod(
-      filter === 'total' ? Infinity : {
-        '7d': 7 * 24 * 60 * 60 * 1000,
-        '2w': 14 * 24 * 60 * 60 * 1000,
-        '1m': 30 * 24 * 60 * 60 * 1000,
-        '3m': 90 * 24 * 60 * 60 * 1000,
-        '8m': 240 * 24 * 60 * 60 * 1000,
-        '1y': 365 * 24 * 60 * 60 * 1000
-      }[filter]
-    );
+      const resultado = LootSplitCore.calcularDivisao(evento, valorTotal, ajustes);
+      
+      await LootSplitCore.salvarSimulacao(evento, resultado);
 
-    embed.addFields(
-      { name: '\u200B', value: '\u200B', inline: false },
-      { name: '📈 Estatísticas Gerais', value: `Total de eventos: **${totalEvents}**\nMembros ativos: **${trackedMembers.filter(m => m.participated > 0).length}**`, inline: false }
-    );
+      const embedResultado = LootSplitUI.createSimulationResultEmbed(evento, valorTotal, resultado.distribuicao);
 
-    return embed;
-  }
+      const botoes = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId(`confirmar_split_${eventId}`)
+            .setLabel('✅ Confirmar e Pagar')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`resimular_${eventId}`)
+            .setLabel('🔄 Resimular')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId(`cancelar_split_${eventId}`)
+            .setLabel('❌ Cancelar')
+            .setStyle(ButtonStyle.Danger)
+        );
 
-  static async initializePanel(channel) {
-    try {
-      const embed = await this.generateStatsEmbed(channel.guild, 'total');
-      const row = new ActionRowBuilder().addComponents(this.createFilterSelectMenu());
-
-      const msg = await channel.send({
-        content: '📊 **Painel de Estatísticas de Eventos**\n*Selecione um período abaixo para filtrar os dados:*',
-        embeds: [embed],
-        components: [row]
+      await interaction.reply({
+        embeds: [embedResultado],
+        components: [botoes]
       });
 
-      this.saveMessageId(channel.id, msg.id);
-      console.log(`✅ Painel de eventos inicializado em ${channel.name}`);
-      return msg;
     } catch (error) {
-      console.error('Erro ao inicializar painel:', error);
+      console.error('Erro na simulação:', error);
+      await interaction.reply({
+        content: '❌ Erro ao processar simulação!',
+        ephemeral: true
+      });
     }
   }
 
-  static async updatePanel(guild, filter = null) {
+  static async processUpdateParticipation(interaction, eventId) {
     try {
-      const saved = this.loadMessageId();
-      if (!saved) return;
-
-      if (filter) this.currentFilter = filter;
-
-      const channel = await guild.channels.fetch(saved.channelId).catch(() => null);
-      if (!channel) return;
-
-      const message = await channel.messages.fetch(saved.messageId).catch(() => null);
-      if (!message) {
-        // Se mensagem foi deletada, recriar
-        await this.initializePanel(channel);
-        return;
+      const dadosInput = interaction.fields.getTextInputValue('dados_participacao');
+      
+      let atualizacoes = [];
+      try {
+        atualizacoes = JSON.parse(dadosInput);
+      } catch {
+        const linhas = dadosInput.split('\n');
+        for (const linha of linhas) {
+          const match = linha.match(/<@!?(\d+)>:(\d{2}):(\d{2}):(\d{2})/) || 
+                       linha.match(/(\d{17,19}):(\d{2}):(\d{2}):(\d{2})/);
+          if (match) {
+            const horas = parseInt(match[2]) * 60 * 60 * 1000;
+            const minutos = parseInt(match[3]) * 60 * 1000;
+            const segundos = parseInt(match[4]) * 1000;
+            atualizacoes.push({
+              userId: match[1],
+              tempo: horas + minutos + segundos
+            });
+          }
+        }
       }
 
-      const embed = await this.generateStatsEmbed(guild, this.currentFilter);
-      const row = new ActionRowBuilder().addComponents(this.createFilterSelectMenu());
+      let evento = EventActions.activeEvents.get(eventId);
+      
+      if (!evento) {
+        return interaction.reply({
+          content: '❌ Evento não encontrado ou já arquivado!',
+          ephemeral: true
+        });
+      }
 
-      await message.edit({ embeds: [embed], components: [row] });
-      this.saveMessageId(saved.channelId, saved.messageId, this.currentFilter);
+      for (const atualizacao of atualizacoes) {
+        if (evento.participacaoIndividual?.has(atualizacao.userId)) {
+          const participacao = evento.participacaoIndividual.get(atualizacao.userId);
+          participacao.tempoTotal = atualizacao.tempo || 0;
+        }
+      }
+
+      const duracaoTotal = evento.duracaoTotal || (evento.iniciadoEm ? Date.now() - evento.iniciadoEm : 0);
+      const painelAtualizado = LootSplitUI.createFinishedEventPanel(evento, duracaoTotal);
+
+      await interaction.message.edit(painelAtualizado);
+      
+      await interaction.reply({
+        content: '✅ Participações atualizadas com sucesso!',
+        ephemeral: true
+      });
+
     } catch (error) {
-      console.error('Erro ao atualizar painel:', error);
+      console.error('Erro ao atualizar participação:', error);
+      await interaction.reply({
+        content: '❌ Erro ao processar atualização!',
+        ephemeral: true
+      });
     }
   }
 
-  static async handleFilterChange(interaction) {
-    const filter = interaction.values[0];
-    await this.updatePanel(interaction.guild, filter);
+  static async archiveAndDeposit(interaction, eventId) {
+    const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
+    const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
+
+    if (!isADM && !isCaller) {
+      return interaction.reply({
+        content: '❌ Apenas ADMs ou Callers podem arquivar!',
+        ephemeral: true
+      });
+    }
+
+    let evento = EventActions.activeEvents.get(eventId);
+    
+    if (!evento) {
+      const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
+      if (stats) {
+        evento = stats;
+      }
+    }
+
+    if (!evento) {
+      return interaction.reply({
+        content: '❌ Evento não encontrado!',
+        ephemeral: true
+      });
+    }
+
+    const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
+    
+    if (simulacao && !simulacao.finalizado) {
+      await LootSplitCore.finalizarSplit(evento, simulacao.resultado, interaction);
+    }
+
+    const canalLoot = interaction.channel;
+    if (canalLoot) {
+      await canalLoot.setName(`📁-${evento.nome}`);
+      await canalLoot.send({
+        embeds: [{
+          setTitle: '✅ Evento Arquivado',
+          setDescription: `Evento **${evento.nome}** foi arquivado e pagamentos processados.`,
+          setColor: 0x57F287,
+          setTimestamp: new Date()
+        }]
+      });
+    }
 
     await interaction.reply({
-      content: `✅ Filtro atualizado para: **${{
-        '7d': 'Últimos 7 dias',
-        '2w': 'Últimas 2 semanas',
-        '1m': 'Último mês',
-        '3m': 'Últimos 3 meses',
-        '8m': 'Últimos 8 meses',
-        '1y': 'Último ano',
-        'total': 'Total Geral'
-      }[filter]}**`,
+      content: '✅ Evento arquivado e taxas depositadas no banco da guilda!',
       ephemeral: true
+    });
+  }
+
+  static async handleConfirmarSplit(interaction, eventId) {
+    const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
+    const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
+
+    if (!isADM && !isCaller) {
+      return interaction.reply({
+        content: '❌ Apenas ADMs ou Callers podem confirmar o pagamento!',
+        ephemeral: true
+      });
+    }
+
+    let evento = EventActions.activeEvents.get(eventId);
+    
+    if (!evento) {
+      const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
+      if (stats) {
+        evento = {
+          ...stats,
+          participacaoIndividual: new Map(Object.entries(stats.participacaoIndividual || {}))
+        };
+      }
+    }
+
+    if (!evento) {
+      return interaction.reply({
+        content: '❌ Evento não encontrado!',
+        ephemeral: true
+      });
+    }
+
+    const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
+    
+    if (!simulacao) {
+      return interaction.reply({
+        content: '❌ Simulação não encontrada! Faça uma simulação primeiro.',
+        ephemeral: true
+      });
+    }
+
+    if (simulacao.finalizado) {
+      return interaction.reply({
+        content: '❌ Este split já foi finalizado!',
+        ephemeral: true
+      });
+    }
+
+    await LootSplitCore.finalizarSplit(evento, simulacao.resultado, interaction);
+
+    await interaction.update({
+      content: `✅ **Lootsplit confirmado e pagamentos realizados!**\n💰 Total distribuído: 🪙 ${simulacao.resultado.valorDistribuir.toLocaleString()}\n💸 Taxa guilda: 🪙 ${simulacao.resultado.taxa.toLocaleString()}`,
+      components: []
+    });
+  }
+
+  static async handleResimular(interaction, eventId) {
+    const modal = LootSplitUI.createSimulationModal(eventId);
+    await interaction.showModal(modal);
+  }
+
+  static async handleCancelarSplit(interaction, eventId) {
+    await interaction.update({
+      content: '❌ Simulação cancelada. Clique em "Simular Lootsplit" para tentar novamente.',
+      embeds: [],
+      components: []
     });
   }
 }
 
-module.exports = EventStatsHandler;
+module.exports = LootSplitHandler;
