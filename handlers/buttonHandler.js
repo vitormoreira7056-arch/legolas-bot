@@ -90,59 +90,91 @@ class ButtonHandler {
       }
 
       // ========== LOOTSPLIT ==========
+      // IMPORTANTE: NÃO usar deferUpdate antes de showModal!
       if (customId.startsWith('simulate_loot_')) {
         const eventId = customId.replace('simulate_loot_', '');
         console.log(`[LOOTSPLIT] Simulando para evento: ${eventId}`);
-        
-        await interaction.deferUpdate().catch(err => {
-          console.log(`[LOOTSPLIT] deferUpdate (normal se já respondeu):`, err.message);
-        });
-        
+
         try {
+          // NÃO deferir aqui - showModal precisa da interação original
           await ActionHandlers.handleSimulateLoot(interaction, eventId);
         } catch (error) {
           console.error(`[LOOTSPLIT] Erro ao simular:`, error);
-          await interaction.followUp({ 
-            content: '❌ Erro ao abrir simulação. Tente novamente.', 
-            ephemeral: true 
-          });
+          // Se falhou, tenta responder adequadamente
+          try {
+            if (interaction.replied || interaction.deferred) {
+              await interaction.followUp({
+                content: '❌ Erro ao abrir simulação. Tente novamente.',
+                ephemeral: true
+              });
+            } else {
+              await interaction.reply({
+                content: '❌ Erro ao abrir simulação. Tente novamente.',
+                ephemeral: true
+              });
+            }
+          } catch {}
         }
         return;
       }
 
       if (customId.startsWith('resimulate_loot_')) {
         const eventId = customId.replace('resimulate_loot_', '');
-        await interaction.deferUpdate().catch(() => {});
-        await ActionHandlers.handleResimulateLoot(interaction, eventId);
+        console.log(`[LOOTSPLIT] Re-simulando para evento: ${eventId}`);
+
+        try {
+          // NÃO deferir aqui - showModal precisa da interação original
+          await ActionHandlers.handleResimulateLoot(interaction, eventId);
+        } catch (error) {
+          console.error(`[LOOTSPLIT] Erro ao reabrir simulação:`, error);
+          try {
+            if (interaction.replied || interaction.deferred) {
+              await interaction.followUp({
+                content: '❌ Erro ao reabrir simulação.',
+                ephemeral: true
+              });
+            } else {
+              await interaction.reply({
+                content: '❌ Erro ao reabrir simulação.',
+                ephemeral: true
+              });
+            }
+          } catch {}
+        }
         return;
       }
 
       if (customId.startsWith('archive_loot_')) {
         const eventId = customId.replace('archive_loot_', '');
+        await interaction.deferUpdate().catch(() => {});
         await ActionHandlers.handleArchiveLoot(interaction, eventId);
         return;
       }
 
       if (customId.startsWith('update_participation_')) {
         const eventId = customId.replace('update_participation_', '');
+        // Também não pode deferir antes de modal
         await ActionHandlers.handleUpdateParticipation(interaction, eventId);
         return;
       }
 
       if (customId.startsWith('confirmar_split_')) {
         const eventId = customId.replace('confirmar_split_', '');
+        await interaction.deferUpdate().catch(() => {});
         await LootSplitHandler.handleConfirmarSplit(interaction, eventId);
         return;
       }
 
       if (customId.startsWith('resimular_')) {
         const eventId = customId.replace('resimular_', '');
+        await interaction.deferUpdate().catch(() => {});
         await LootSplitHandler.handleResimular(interaction, eventId);
         return;
       }
 
       if (customId.startsWith('cancelar_split_')) {
         const eventId = customId.replace('cancelar_split_', '');
+        await interaction.deferUpdate().catch(() => {});
         await LootSplitHandler.handleCancelarSplit(interaction, eventId);
         return;
       }
@@ -175,16 +207,19 @@ class ButtonHandler {
       }
 
       if (customId === 'xp_ativar') {
+        await interaction.deferUpdate().catch(() => {});
         await ActionHandlers.handleXPAtivar(interaction);
         return;
       }
 
       if (customId === 'xp_desativar') {
+        await interaction.deferUpdate().catch(() => {});
         await ActionHandlers.handleXPDesativar(interaction);
         return;
       }
 
       if (customId === 'xp_voltar_config') {
+        await interaction.deferUpdate().catch(() => {});
         await ActionHandlers.handleVoltarConfig(interaction);
         return;
       }
@@ -221,9 +256,9 @@ class ButtonHandler {
       console.error(`[ERRO] No handler de botões (${customId}):`, error);
       try {
         if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({ 
-            content: '❌ Erro ao processar botão. Tente novamente.', 
-            ephemeral: true 
+          await interaction.reply({
+            content: '❌ Erro ao processar botão. Tente novamente.',
+            ephemeral: true
           });
         }
       } catch {}
