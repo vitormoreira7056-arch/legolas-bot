@@ -4,17 +4,22 @@ const path = require('path');
 class LootSplitCore {
   static calcularDivisao(evento, valorTotal, ajustes = {}) {
     const ConfigHandler = require('./configHandler');
-    const config = ConfigHandler.getConfig(evento.guildId);
+    const config = ConfigHandler.getConfig(evento.guildId) || {};
     const taxaPercentual = config.taxaPadrao || 10;
     const valorTaxa = Math.floor(valorTotal * (taxaPercentual / 100));
     const valorDistribuir = valorTotal - valorTaxa;
 
-    if (!evento.participacaoIndividual || evento.participacaoIndividual.size === 0) {
-      const numParticipantes = evento.participantes.length || 1;
+    // Suportar tanto presenceData quanto participacaoIndividual
+    const participacoes = evento.participacaoIndividual || 
+      (evento.presenceData ? new Map(Object.entries(evento.presenceData.participants || {})) : new Map());
+
+    if (!participacoes || participacoes.size === 0) {
+      const numParticipantes = evento.participants?.length || evento.participantes?.length || 1;
       const valorPorPessoa = Math.floor(valorDistribuir / numParticipantes);
       
       const resultado = {};
-      for (const userId of evento.participantes) {
+      const participants = evento.participants || evento.participantes || [];
+      for (const userId of participants) {
         resultado[userId] = {
           userId,
           nickname: 'Desconhecido',
@@ -36,15 +41,16 @@ class LootSplitCore {
     let tempoTotalValido = 0;
     const participantesValidos = [];
 
-    for (const [userId, participacao] of evento.participacaoIndividual) {
+    for (const [userId, participacao] of participacoes) {
+      const tempoTotal = participacao.tempoTotal || participacao.totalTime || 0;
       const ajuste = ajustes[userId] || 100;
-      const tempoAjustado = participacao.tempoTotal * (ajuste / 100);
+      const tempoAjustado = tempoTotal * (ajuste / 100);
       
       tempoTotalValido += tempoAjustado;
       participantesValidos.push({
         userId,
-        nickname: participacao.nickname,
-        tempoOriginal: participacao.tempoTotal,
+        nickname: participacao.nickname || 'Desconhecido',
+        tempoOriginal: tempoTotal,
         tempoAjustado,
         ajuste
       });
@@ -133,7 +139,7 @@ class LootSplitCore {
         const user = db.getUser(userId);
         user.saldo += dadosUser.valor;
         db.updateUser(userId, user);
-        
+
         db.addTransaction('loot_split', userId, dadosUser.valor, {
           evento: evento.nome,
           eventoId: evento.id
