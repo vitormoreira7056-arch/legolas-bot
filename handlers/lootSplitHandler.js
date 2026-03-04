@@ -3,13 +3,31 @@ const LootSplitCore = require('./lootSplitCore');
 const LootSplitUI = require('./lootSplitUI');
 const EventActions = require('./actions/eventActions');
 const EventStatsHandler = require('./eventStatsHandler');
+const fs = require('fs');
+const path = require('path');
 
 class LootSplitHandler {
+  static async loadSimulations() {
+    const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
+    
+    try {
+      if (fs.existsSync(arquivo)) {
+        const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
+        console.log('✅ Simulações de lootsplit carregadas com sucesso!');
+        return dados;
+      }
+    } catch (error) {
+      console.error('Erro ao carregar simulações:', error);
+    }
+    
+    return {};
+  }
+
   static async processSimulation(interaction, eventId) {
     try {
       const valorInput = interaction.fields.getTextInputValue('valor_total');
       const ajustesInput = interaction.fields.getTextInputValue('ajustes') || '';
-
+      
       const valorTotal = parseInt(valorInput.replace(/\D/g, ''));
 
       if (isNaN(valorTotal) || valorTotal <= 0) {
@@ -50,7 +68,7 @@ class LootSplitHandler {
       }
 
       const resultado = LootSplitCore.calcularDivisao(evento, valorTotal, ajustes);
-
+      
       await LootSplitCore.salvarSimulacao(evento, resultado);
 
       const embedResultado = LootSplitUI.createSimulationResultEmbed(evento, valorTotal, resultado.distribuicao);
@@ -88,7 +106,7 @@ class LootSplitHandler {
   static async processUpdateParticipation(interaction, eventId) {
     try {
       const dadosInput = interaction.fields.getTextInputValue('dados_participacao');
-
+      
       let atualizacoes = [];
       try {
         atualizacoes = JSON.parse(dadosInput);
@@ -110,7 +128,7 @@ class LootSplitHandler {
       }
 
       let evento = EventActions.activeEvents.get(eventId);
-
+      
       if (!evento) {
         return interaction.reply({
           content: '❌ Evento não encontrado ou já arquivado!',
@@ -129,7 +147,7 @@ class LootSplitHandler {
       const painelAtualizado = LootSplitUI.createFinishedEventPanel(evento, duracaoTotal);
 
       await interaction.message.edit(painelAtualizado);
-
+      
       await interaction.reply({
         content: '✅ Participações atualizadas com sucesso!',
         ephemeral: true
@@ -156,7 +174,7 @@ class LootSplitHandler {
     }
 
     let evento = EventActions.activeEvents.get(eventId);
-
+    
     if (!evento) {
       const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
       if (stats) {
@@ -172,7 +190,7 @@ class LootSplitHandler {
     }
 
     const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
-
+    
     if (simulacao && !simulacao.finalizado) {
       await LootSplitCore.finalizarSplit(evento, simulacao.resultado, interaction);
     }
@@ -208,7 +226,7 @@ class LootSplitHandler {
     }
 
     let evento = EventActions.activeEvents.get(eventId);
-
+    
     if (!evento) {
       const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
       if (stats) {
@@ -227,7 +245,7 @@ class LootSplitHandler {
     }
 
     const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
-
+    
     if (!simulacao) {
       return interaction.reply({
         content: '❌ Simulação não encontrada! Faça uma simulação primeiro.',
