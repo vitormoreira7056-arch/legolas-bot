@@ -223,19 +223,17 @@ class LootSplitHandler {
     const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
 
     if (simulacao && !simulacao.finalizado) {
-      await interaction.reply({
+      return interaction.reply({
         content: '⚠️ Existe uma simulação pendente para este evento. Finalize ou cancele antes de arquivar.',
         ephemeral: true
       });
-      return;
     }
 
     if (simulacao && !simulacao.pago) {
-      await interaction.reply({
+      return interaction.reply({
         content: '⚠️ O split deste evento ainda não foi pago aos participantes!',
         ephemeral: true
       });
-      return;
     }
 
     const canalLoot = interaction.channel;
@@ -262,67 +260,67 @@ class LootSplitHandler {
     });
   }
 
+  // 🆕 CORREÇÃO IMPORTANTE: Usar editReply quando já deferred
   static async handleConfirmarSplit(interaction, eventId) {
-    const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
-    const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
-
-    if (!isADM && !isCaller) {
-      return interaction.reply({
-        content: '❌ Apenas ADMs ou Callers podem confirmar o pagamento!',
-        ephemeral: true
-      });
-    }
-
-    let evento = EventActions.activeEvents.get(eventId);
-
-    if (!evento) {
-      const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
-      if (stats) {
-        evento = {
-          ...stats,
-          participacaoIndividual: new Map(Object.entries(stats.participacaoIndividual || {}))
-        };
-      }
-    }
-
-    if (!evento) {
-      return interaction.reply({
-        content: '❌ Evento não encontrado!',
-        ephemeral: true
-      });
-    }
-
-    const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
-
-    if (!simulacao) {
-      return interaction.reply({
-        content: '❌ Simulação não encontrada! Faça uma simulação primeiro.',
-        ephemeral: true
-      });
-    }
-
-    if (simulacao.pago) {
-      return interaction.reply({
-        content: '❌ Este split já foi pago anteriormente!',
-        ephemeral: true
-      });
-    }
-
-    if (simulacao.finalizado) {
-      return interaction.reply({
-        content: '❌ Este split já foi finalizado!',
-        ephemeral: true
-      });
-    }
-
     try {
+      const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
+      const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
+
+      if (!isADM && !isCaller) {
+        // Como já foi deferred no buttonHandler, usar editReply
+        return interaction.editReply({
+          content: '❌ Apenas ADMs ou Callers podem confirmar o pagamento!',
+          embeds: [],
+          components: []
+        });
+      }
+
+      let evento = EventActions.activeEvents.get(eventId);
+
+      if (!evento) {
+        const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
+        if (stats) {
+          evento = {
+            ...stats,
+            participacaoIndividual: new Map(Object.entries(stats.participacaoIndividual || {}))
+          };
+        }
+      }
+
+      if (!evento) {
+        return interaction.editReply({
+          content: '❌ Evento não encontrado!',
+          embeds: [],
+          components: []
+        });
+      }
+
+      const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
+
+      if (!simulacao) {
+        return interaction.editReply({
+          content: '❌ Simulação não encontrada! Faça uma simulação primeiro.',
+          embeds: [],
+          components: []
+        });
+      }
+
+      if (simulacao.pago) {
+        return interaction.editReply({
+          content: '❌ Este split já foi pago anteriormente!',
+          embeds: [],
+          components: []
+        });
+      }
+
       console.log(`[LOOTSPLIT] Confirmando pagamento para evento ${eventId}`);
       const resultado = await LootSplitCore.finalizarSplit(evento, simulacao.resultado, interaction);
       
       if (resultado.jaPago) {
-        return interaction.reply({
+        return interaction.editReply({
           content: '❌ Este split já foi pago anteriormente!',
-          ephemeral: true
+          embeds: [],
+          components: []
         });
       }
 
@@ -370,7 +368,8 @@ class LootSplitHandler {
         });
       }
 
-      await interaction.update({
+      // 🆕 CORREÇÃO: Usar editReply já que foi deferred no buttonHandler
+      await interaction.editReply({
         content: `✅ **Lootsplit confirmado e pagamentos realizados!**`,
         embeds: [embedConfirmacao],
         components: [
@@ -387,23 +386,41 @@ class LootSplitHandler {
 
     } catch (error) {
       console.error('[LOOTSPLIT] Erro ao confirmar split:', error);
-      await interaction.reply({
+      // Usar editReply pois já foi deferred
+      await interaction.editReply({
         content: `❌ Erro ao processar pagamento: ${error.message}`,
-        ephemeral: true
+        embeds: [],
+        components: []
+      }).catch(() => {
+        // Se falhar, tenta followUp
+        interaction.followUp({
+          content: `❌ Erro ao processar pagamento: ${error.message}`,
+          ephemeral: true
+        }).catch(() => {});
       });
     }
   }
 
   static async handleResimular(interaction, eventId) {
+    // Resimular abre modal, então não pode ter sido deferred
+    // Mas como buttonHandler não deferiu para resimular (já que abre modal), podemos usar reply normal
     const modal = LootSplitUI.createSimulationModal(eventId);
     await interaction.showModal(modal);
   }
 
   static async handleCancelarSplit(interaction, eventId) {
-    await interaction.update({
+    // Já foi deferred no buttonHandler
+    await interaction.editReply({
       content: '❌ Simulação cancelada. Clique em "Simular Lootsplit" para tentar novamente.',
       embeds: [],
       components: []
+    }).catch(async () => {
+      // Se falhar, tenta update
+      await interaction.update({
+        content: '❌ Simulação cancelada. Clique em "Simular Lootsplit" para tentar novamente.',
+        embeds: [],
+        components: []
+      }).catch(() => {});
     });
   }
 }
