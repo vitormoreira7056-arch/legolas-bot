@@ -1,267 +1,132 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const LootSplitCore = require('./lootSplitCore');
-const LootSplitUI = require('./lootSplitUI');
-const EventActions = require('./actions/eventActions');
-const EventStatsHandler = require('./eventStatsHandler');
+const fs = require('fs');
+const path = require('path');
 
-class LootSplitHandler {
-  static async processSimulation(interaction, eventId) {
+class EventStatsHandler {
+  static async saveEventStats(evento, guild) {
+    const arquivo = path.join(__dirname, '..', 'data', 'eventStats.json');
+    let dados = {};
+    
     try {
-      const valorInput = interaction.fields.getTextInputValue('valor_total');
-      const ajustesInput = interaction.fields.getTextInputValue('ajustes') || '';
-      
-      const valorTotal = parseInt(valorInput.replace(/\D/g, ''));
-      
-      if (isNaN(valorTotal) || valorTotal <= 0) {
-        return interaction.reply({
-          content: '❌ Valor inválido! Digite um número maior que 0.',
-          ephemeral: true
-        });
+      if (fs.existsSync(arquivo)) {
+        dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
       }
+    } catch (error) {
+      console.error('Erro ao ler stats:', error);
+    }
 
-      const ajustes = {};
-      if (ajustesInput) {
-        const linhas = ajustesInput.split(/[\n,]/);
-        for (const linha of linhas) {
-          const match = linha.match(/<@!?(\d+)>:(\d+)/) || linha.match(/(\d{17,19}):(\d+)/);
-          if (match) {
-            ajustes[match[1]] = parseInt(match[2]);
-          }
-        }
-      }
+    if (!dados[guild.id]) {
+      dados[guild.id] = { historico: [], painel: null };
+    }
 
-      let evento = EventActions.activeEvents.get(eventId);
-      
-      if (!evento) {
-        const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
-        if (stats) {
-          evento = {
-            ...stats,
-            participacaoIndividual: new Map(Object.entries(stats.participacaoIndividual || {}))
+    const participacaoSerializada = {};
+    if (evento.participacaoIndividual) {
+      if (evento.participacaoIndividual instanceof Map) {
+        for (const [userId, part] of evento.participacaoIndividual) {
+          participacaoSerializada[userId] = {
+            userId: part.userId,
+            nickname: part.nickname,
+            tempos: part.tempos || [],
+            tempoTotal: part.tempoTotal,
+            entradaAtual: null
           };
         }
+      } else {
+        Object.assign(participacaoSerializada, evento.participacaoIndividual);
       }
-
-      if (!evento) {
-        return interaction.reply({
-          content: '❌ Evento não encontrado!',
-          ephemeral: true
-        });
-      }
-
-      const resultado = LootSplitCore.calcularDivisao(evento, valorTotal, ajustes);
-      
-      await LootSplitCore.salvarSimulacao(evento, resultado);
-
-      const embedResultado = LootSplitUI.createSimulationResultEmbed(evento, valorTotal, resultado.distribuicao);
-
-      const botoes = new ActionRowBuilder()
-        .addComponents(
-          new ButtonBuilder()
-            .setCustomId(`confirmar_split_${eventId}`)
-            .setLabel('✅ Confirmar e Pagar')
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId(`resimular_${eventId}`)
-            .setLabel('🔄 Resimular')
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId(`cancelar_split_${eventId}`)
-            .setLabel('❌ Cancelar')
-            .setStyle(ButtonStyle.Danger)
-        );
-
-      await interaction.reply({
-        embeds: [embedResultado],
-        components: [botoes]
-      });
-
-    } catch (error) {
-      console.error('Erro na simulação:', error);
-      await interaction.reply({
-        content: '❌ Erro ao processar simulação!',
-        ephemeral: true
-      });
     }
-  }
 
-  static async processUpdateParticipation(interaction, eventId) {
+    const statsEvento = {
+      id: evento.id,
+      nome: evento.nome,
+      tipo: evento.tipo,
+      criadorId: evento.criadorId,
+      iniciadoEm: evento.iniciadoEm,
+      finalizadoEm: evento.finalizadoEm,
+      duracaoTotal: evento.duracaoTotal,
+      participantes: evento.participantes,
+      participacaoIndividual: participacaoSerializada,
+      status: 'encerrado',
+      canalTextoId: evento.textChannelId,
+      dataRegistro: new Date().toISOString()
+    };
+
+    const indexExistente = dados[guild.id].historico.findIndex(e => e.id === evento.id);
+    if (indexExistente >= 0) {
+      dados[guild.id].historico[indexExistente] = statsEvento;
+    } else {
+      dados[guild.id].historico.push(statsEvento);
+    }
+    
+    if (dados[guild.id].historico.length > 100) {
+      dados[guild.id].historico = dados[guild.id].historico.slice(-100);
+    }
+
     try {
-      const dadosInput = interaction.fields.getTextInputValue('dados_participacao');
-      
-      let atualizacoes = [];
-      try {
-        atualizacoes = JSON.parse(dadosInput);
-      } catch {
-        const linhas = dadosInput.split('\n');
-        for (const linha of linhas) {
-          const match = linha.match(/<@!?(\d+)>:(\d{2}):(\d{2}):(\d{2})/) || 
-                       linha.match(/(\d{17,19}):(\d{2}):(\d{2}):(\d{2})/);
-          if (match) {
-            const horas = parseInt(match[2]) * 60 * 60 * 1000;
-            const minutos = parseInt(match[3]) * 60 * 1000;
-            const segundos = parseInt(match[4]) * 1000;
-            atualizacoes.push({
-              userId: match[1],
-              tempo: horas + minutos + segundos
-            });
-          }
-        }
-      }
-
-      let evento = EventActions.activeEvents.get(eventId);
-      
-      if (!evento) {
-        return interaction.reply({
-          content: '❌ Evento não encontrado ou já arquivado!',
-          ephemeral: true
-        });
-      }
-
-      for (const atualizacao of atualizacoes) {
-        if (evento.participacaoIndividual?.has(atualizacao.userId)) {
-          const participacao = evento.participacaoIndividual.get(atualizacao.userId);
-          participacao.tempoTotal = atualizacao.tempo || 0;
-        }
-      }
-
-      const duracaoTotal = evento.duracaoTotal || (evento.iniciadoEm ? Date.now() - evento.iniciadoEm : 0);
-      const painelAtualizado = LootSplitUI.createFinishedEventPanel(evento, duracaoTotal);
-
-      await interaction.message.edit(painelAtualizado);
-      
-      await interaction.reply({
-        content: '✅ Participações atualizadas com sucesso!',
-        ephemeral: true
-      });
-
+      fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
     } catch (error) {
-      console.error('Erro ao atualizar participação:', error);
-      await interaction.reply({
-        content: '❌ Erro ao processar atualização!',
-        ephemeral: true
-      });
+      console.error('Erro ao salvar stats:', error);
     }
+    
+    await this.updatePanel(guild);
   }
 
-  static async archiveAndDeposit(interaction, eventId) {
-    const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
-    const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
+  static async updatePanel(guild) {
+    // Implementação do painel de estatísticas gerais (se existir)
+    // Esta função pode ser expandida para atualizar um painel fixo de estatísticas da guilda
+  }
 
-    if (!isADM && !isCaller) {
-      return interaction.reply({
-        content: '❌ Apenas ADMs ou Callers podem arquivar!',
-        ephemeral: true
-      });
-    }
-
-    let evento = EventActions.activeEvents.get(eventId);
-    
-    if (!evento) {
-      const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
-      if (stats) {
-        evento = stats;
-      }
-    }
-
-    if (!evento) {
-      return interaction.reply({
-        content: '❌ Evento não encontrado!',
-        ephemeral: true
-      });
-    }
-
-    const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
-    
-    if (simulacao && !simulacao.finalizado) {
-      await LootSplitCore.finalizarSplit(evento, simulacao.resultado, interaction);
-    }
-
-    const canalLoot = interaction.channel;
-    if (canalLoot) {
-      await canalLoot.setName(`📁-${evento.nome}`);
-      await canalLoot.send({
-        embeds: [{
-          setTitle: '✅ Evento Arquivado',
-          setDescription: `Evento **${evento.nome}** foi arquivado e pagamentos processados.`,
-          setColor: 0x57F287,
-          setTimestamp: new Date()
-        }]
-      });
-    }
-
+  static async handleFilterChange(interaction) {
+    // Implementação para filtros de estatísticas (7d, 2w, 1m, etc)
+    // Placeholder para funcionalidade futura
     await interaction.reply({
-      content: '✅ Evento arquivado e taxas depositadas no banco da guilda!',
+      content: 'Filtro atualizado!',
       ephemeral: true
     });
   }
 
-  static async handleConfirmarSplit(interaction, eventId) {
-    const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
-    const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
-
-    if (!isADM && !isCaller) {
-      return interaction.reply({
-        content: '❌ Apenas ADMs ou Callers podem confirmar o pagamento!',
-        ephemeral: true
-      });
-    }
-
-    let evento = EventActions.activeEvents.get(eventId);
+  static getEventStats(guildId, eventId) {
+    const arquivo = path.join(__dirname, '..', 'data', 'eventStats.json');
     
-    if (!evento) {
-      const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
-      if (stats) {
-        evento = {
-          ...stats,
-          participacaoIndividual: new Map(Object.entries(stats.participacaoIndividual || {}))
-        };
+    try {
+      if (fs.existsSync(arquivo)) {
+        const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
+        const evento = dados[guildId]?.historico?.find(e => e.id === eventId);
+        if (evento) {
+          return {
+            ...evento,
+            participacaoIndividual: new Map(Object.entries(evento.participacaoIndividual || {}))
+          };
+        }
       }
+    } catch (error) {
+      console.error('Erro ao buscar stats:', error);
     }
-
-    if (!evento) {
-      return interaction.reply({
-        content: '❌ Evento não encontrado!',
-        ephemeral: true
-      });
-    }
-
-    const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
     
-    if (!simulacao) {
-      return interaction.reply({
-        content: '❌ Simulação não encontrada! Faça uma simulação primeiro.',
-        ephemeral: true
-      });
-    }
-
-    if (simulacao.finalizado) {
-      return interaction.reply({
-        content: '❌ Este split já foi finalizado!',
-        ephemeral: true
-      });
-    }
-
-    await LootSplitCore.finalizarSplit(evento, simulacao.resultado, interaction);
-
-    await interaction.update({
-      content: `✅ **Lootsplit confirmado e pagamentos realizados!**\n💰 Total distribuído: 🪙 ${simulacao.resultado.valorDistribuir.toLocaleString()}\n💸 Taxa guilda: 🪙 ${simulacao.resultado.taxa.toLocaleString()}`,
-      components: []
-    });
+    return null;
   }
 
-  static async handleResimular(interaction, eventId) {
-    const modal = LootSplitUI.createSimulationModal(eventId);
-    await interaction.showModal(modal);
-  }
-
-  static async handleCancelarSplit(interaction, eventId) {
-    await interaction.update({
-      content: '❌ Simulação cancelada. Clique em "Simular Lootsplit" para tentar novamente.',
-      embeds: [],
-      components: []
-    });
+  static getAllStats(guildId, filtroDias = null) {
+    const arquivo = path.join(__dirname, '..', 'data', 'eventStats.json');
+    
+    try {
+      if (fs.existsSync(arquivo)) {
+        const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
+        let historico = dados[guildId]?.historico || [];
+        
+        if (filtroDias) {
+          const limite = new Date();
+          limite.setDate(limite.getDate() - filtroDias);
+          historico = historico.filter(e => new Date(e.dataRegistro) >= limite);
+        }
+        
+        return historico;
+      }
+    } catch (error) {
+      console.error('Erro ao buscar stats:', error);
+    }
+    
+    return [];
   }
 }
 
-module.exports = LootSplitHandler;
+module.exports = EventStatsHandler;
