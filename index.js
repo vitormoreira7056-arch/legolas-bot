@@ -1,10 +1,10 @@
-const { 
-  Client, 
-  GatewayIntentBits, 
-  Collection, 
-  REST, 
-  Routes, 
-  Events 
+const {
+  Client,
+  GatewayIntentBits,
+  Collection,
+  REST,
+  Routes,
+  Events
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -138,10 +138,10 @@ async function atualizarSaldoGuilda() {
 setInterval(atualizarSaldoGuilda, 300000);
 global.atualizarSaldoGuilda = atualizarSaldoGuilda;
 
-client.once(Events.ClientReady, () => {
+client.once(Events.ClientReady, async () => { // 🆕 ADICIONADO async
   // CARREGAR DADOS PERSISTIDOS
   try {
-    LootSplitHandler.loadSimulations();
+    await LootSplitHandler.loadSimulations(); // 🆕 ADICIONADO await
     EventStatsHandler.loadStats();
   } catch (error) {
     console.error('Erro ao carregar dados persistidos:', error);
@@ -196,9 +196,9 @@ client.on(Events.InteractionCreate, async interaction => {
       } catch (error) {
         console.error('Erro no select menu:', error);
         if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({ 
-            content: '❌ Erro ao processar filtro!', 
-            ephemeral: true 
+          await interaction.reply({
+            content: '❌ Erro ao processar filtro!',
+            ephemeral: true
           }).catch(() => {});
         }
       }
@@ -212,9 +212,9 @@ client.on(Events.InteractionCreate, async interaction => {
     } catch (error) {
       console.error('Erro no modal:', error);
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ 
-          content: '❌ Erro ao processar formulário!', 
-          ephemeral: true 
+        await interaction.reply({
+          content: '❌ Erro ao processar formulário!',
+          ephemeral: true
         }).catch(() => {});
       }
     }
@@ -227,9 +227,9 @@ client.on(Events.InteractionCreate, async interaction => {
     } catch (error) {
       console.error('Erro no botão:', error);
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ 
-          content: '❌ Erro ao processar ação!', 
-          ephemeral: true 
+        await interaction.reply({
+          content: '❌ Erro ao processar ação!',
+          ephemeral: true
         }).catch(() => {});
       }
     }
@@ -255,14 +255,14 @@ client.on(Events.InteractionCreate, async interaction => {
     const errorMessage = '❌ Ocorreu um erro ao executar este comando!';
 
     if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ 
-        content: errorMessage, 
-        ephemeral: true 
+      await interaction.followUp({
+        content: errorMessage,
+        ephemeral: true
       }).catch(() => {});
     } else {
-      await interaction.reply({ 
-        content: errorMessage, 
-        ephemeral: true 
+      await interaction.reply({
+        content: errorMessage,
+        ephemeral: true
       }).catch(() => {});
     }
   }
