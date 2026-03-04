@@ -1,8 +1,9 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const LootSplitCore = require('./lootSplitCore');
 const LootSplitUI = require('./lootSplitUI');
 const EventActions = require('./actions/eventActions');
 const EventStatsHandler = require('./eventStatsHandler');
+const EventHandler = require('./eventHandler');
 const fs = require('fs');
 const path = require('path');
 
@@ -85,20 +86,10 @@ class LootSplitHandler {
 
       console.log(`[LOOTSPLIT] Evento encontrado: ${evento.nome}`);
 
-      if (!LootSplitCore || typeof LootSplitCore.calcularDivisao !== 'function') {
-        console.error('[LOOTSPLIT] LootSplitCore.calcularDivisao não encontrado!');
-        return interaction.reply({
-          content: '❌ Erro interno: Sistema de cálculo indisponível.',
-          ephemeral: true
-        });
-      }
-
       const resultado = LootSplitCore.calcularDivisao(evento, valorTotal, valorReparo, ajustes);
       console.log(`[LOOTSPLIT] Cálculo realizado:`, resultado);
 
-      if (LootSplitCore.salvarSimulacao) {
-        await LootSplitCore.salvarSimulacao(evento, resultado, valorReparo);
-      }
+      await LootSplitCore.salvarSimulacao(evento, resultado, valorReparo);
 
       const embedResultado = LootSplitUI.createSimulationResultEmbed(evento, valorTotal, valorReparo, resultado);
 
@@ -134,31 +125,52 @@ class LootSplitHandler {
     }
   }
 
+  // 🆕 CORREÇÃO: Atualizar participação agora funciona corretamente
   static async processUpdateParticipation(interaction, eventId) {
     try {
       const dadosInput = interaction.fields.getTextInputValue('dados_participacao');
 
-      let atualizacoes = [];
-      try {
-        atualizacoes = JSON.parse(dadosInput);
-      } catch {
-        const linhas = dadosInput.split('\n');
-        for (const linha of linhas) {
-          const match = linha.match(/<@!?(\d+)>:?(\d{2}):(\d{2}):(\d{2})/) ||
-            linha.match(/(\d{17,19}):?(\d{2}):(\d{2}):(\d{2})/);
-          if (match) {
-            const horas = parseInt(match[2]) * 60 * 60 * 1000;
-            const minutos = parseInt(match[3]) * 60 * 1000;
-            const segundos = parseInt(match[4]) * 1000;
-            atualizacoes.push({
-              userId: match[1],
-              tempo: horas + minutos + segundos
-            });
-          }
+      // Parse do formato: @user:HH:MM:SS ou userId:HH:MM:SS
+      const atualizacoes = [];
+      const linhas = dadosInput.split('\n');
+      
+      for (const linha of linhas) {
+        const trimmed = linha.trim();
+        if (!trimmed) continue;
+
+        // Match @user:HH:MM:SS ou userId:HH:MM:SS
+        const match = trimmed.match(/<@!?(\d+)>:?(\d{1,2}):(\d{2}):(\d{2})/) ||
+                     trimmed.match(/(\d{17,19}):?(\d{1,2}):(\d{2}):(\d{2})/);
+        
+        if (match) {
+          const horas = parseInt(match[2]) * 60 * 60 * 1000;
+          const minutos = parseInt(match[3]) * 60 * 1000;
+          const segundos = parseInt(match[4]) * 1000;
+          atualizacoes.push({
+            userId: match[1],
+            tempo: horas + minutos + segundos
+          });
         }
       }
 
+      if (atualizacoes.length === 0) {
+        return interaction.reply({
+          content: '❌ Formato inválido! Use: `@usuario:01:30:00` ou `123456789:01:30:00`',
+          ephemeral: true
+        });
+      }
+
       let evento = EventActions.activeEvents.get(eventId);
+
+      if (!evento) {
+        const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
+        if (stats) {
+          evento = {
+            ...stats,
+            participacaoIndividual: new Map(Object.entries(stats.participacaoIndividual || {}))
+          };
+        }
+      }
 
       if (!evento) {
         return interaction.reply({
@@ -167,20 +179,39 @@ class LootSplitHandler {
         });
       }
 
+      // Atualizar tempos
       for (const atualizacao of atualizacoes) {
         if (evento.participacaoIndividual?.has(atualizacao.userId)) {
           const participacao = evento.participacaoIndividual.get(atualizacao.userId);
-          participacao.tempoTotal = atualizacao.tempo || 0;
+          participacao.tempoTotal = atualizacao.tempo;
+        } else {
+          // Adicionar novo participante se não existir
+          const member = await interaction.guild.members.fetch(atualizacao.userId).catch(() => null);
+          if (member) {
+            evento.participacaoIndividual.set(atualizacao.userId, {
+              userId: atualizacao.userId,
+              nickname: member.nickname || member.user.username,
+              tempos: [],
+              tempoTotal: atualizacao.tempo,
+              entradaAtual: null
+            });
+          }
         }
+      }
+
+      // Atualizar o evento no Map se estiver ativo
+      if (EventActions.activeEvents.has(eventId)) {
+        EventActions.activeEvents.set(eventId, evento);
       }
 
       const duracaoTotal = evento.duracaoTotal || (evento.iniciadoEm ? Date.now() - evento.iniciadoEm : 0);
       const painelAtualizado = LootSplitUI.createFinishedEventPanel(evento, duracaoTotal);
 
+      // Atualizar a mensagem original
       await interaction.message.edit(painelAtualizado);
 
       await interaction.reply({
-        content: '✅ Participações atualizadas com sucesso!',
+        content: `✅ **${atualizacoes.length}** participação(ões) atualizada(s) com sucesso!\n\n${atualizacoes.map(a => `<@${a.userId}>: ${LootSplitCore.formatarTempo(a.tempo)}`).join('\n')}`,
         ephemeral: true
       });
 
@@ -193,81 +224,131 @@ class LootSplitHandler {
     }
   }
 
-  static async archiveAndDeposit(interaction, eventId) {
+  // 🆕 CORREÇÃO: Arquivar evento agora deleta o canal e salva estatísticas
+  static async handleArquivarEvento(interaction, eventId) {
     const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
     const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
 
     if (!isADM && !isCaller) {
-      return interaction.reply({
-        content: '❌ Apenas ADMs ou Callers podem arquivar!',
-        ephemeral: true
+      return interaction.editReply({
+        content: '❌ Apenas ADMs ou Callers podem arquivar eventos!',
+        embeds: [],
+        components: []
       });
     }
 
-    let evento = EventActions.activeEvents.get(eventId);
+    try {
+      let evento = EventActions.activeEvents.get(eventId);
 
-    if (!evento) {
-      const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
-      if (stats) {
-        evento = stats;
+      if (!evento) {
+        const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
+        if (stats) {
+          evento = stats;
+        }
       }
-    }
 
-    if (!evento) {
-      return interaction.reply({
-        content: '❌ Evento não encontrado!',
-        ephemeral: true
+      if (!evento) {
+        return interaction.editReply({
+          content: '❌ Evento não encontrado!',
+          embeds: [],
+          components: []
+        });
+      }
+
+      const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
+
+      // Verificar se foi pago
+      if (simulacao && !simulacao.pago) {
+        return interaction.editReply({
+          content: '⚠️ Este evento ainda não teve o lootsplit pago! Confirme o pagamento antes de arquivar.',
+          embeds: [],
+          components: []
+        });
+      }
+
+      // Salvar estatísticas finais antes de deletar
+      if (EventStatsHandler.saveEventStats && evento) {
+        await EventStatsHandler.saveEventStats(evento, interaction.guild);
+      }
+
+      // 🆕 MOVER O CANAL PARA CATEGORIA DE ARQUIVADOS (ao invés de deletar)
+      const categoriaArquivados = interaction.guild.channels.cache.find(
+        c => c.name === '📁 EVENTOS ARQUIVADOS' && c.type === 4
+      );
+
+      const canalAtual = interaction.channel;
+
+      if (categoriaArquivados && canalAtual) {
+        // Mover para categoria de arquivados e renomear
+        await canalAtual.setParent(categoriaArquivados.id, { lockPermissions: false });
+        await canalAtual.setName(`📁-${evento.nome.toLowerCase().replace(/\s+/g, '-')}`);
+        
+        // Remover permissões de escrita para não-admins
+        await canalAtual.permissionOverwrites.edit(interaction.guild.id, {
+          SendMessages: false,
+          AddReactions: false
+        });
+
+        // Enviar mensagem final
+        const embedFinal = new EmbedBuilder()
+          .setTitle('📁 Evento Arquivado')
+          .setDescription(`Este evento foi arquivado e todos os pagamentos foram processados.`)
+          .setColor(0x95A5A6)
+          .addFields(
+            { name: '💰 Total Distribuído', value: `🪙 ${simulacao?.resultado?.valorDistribuir?.toLocaleString() || 0}`, inline: true },
+            { name: '💸 Taxa Guilda', value: `🪙 ${simulacao?.resultado?.taxa?.toLocaleString() || 0}`, inline: true },
+            { name: '👥 Participantes', value: `${Object.keys(simulacao?.resultado?.distribuicao || {}).length}`, inline: true }
+          )
+          .setTimestamp();
+
+        await canalAtual.send({ embeds: [embedFinal] });
+
+        // Atualizar mensagem de confirmação
+        await interaction.editReply({
+          content: `✅ **Evento arquivado com sucesso!**\n📁 Canal movido para ${categoriaArquivados}`,
+          embeds: [],
+          components: []
+        });
+
+      } else {
+        // Se não tiver categoria, apenas renomeia e tranca
+        if (canalAtual) {
+          await canalAtual.setName(`📁-${evento.nome.toLowerCase().replace(/\s+/g, '-')}`);
+          await canalAtual.permissionOverwrites.edit(interaction.guild.id, {
+            SendMessages: false
+          });
+
+          await interaction.editReply({
+            content: `✅ **Evento arquivado!**\n📁 Canal renomeado e trancado.`,
+            embeds: [],
+            components: []
+          });
+        }
+      }
+
+      // Remover do mapa de eventos ativos
+      if (EventActions.activeEvents.has(eventId)) {
+        EventActions.activeEvents.delete(eventId);
+      }
+
+      console.log(`[LOOTSPLIT] Evento ${eventId} arquivado por ${interaction.user.tag}`);
+
+    } catch (error) {
+      console.error('[LOOTSPLIT] Erro ao arquivar evento:', error);
+      await interaction.editReply({
+        content: `❌ Erro ao arquivar evento: ${error.message}`,
+        embeds: [],
+        components: []
       });
     }
-
-    const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
-
-    if (simulacao && !simulacao.finalizado) {
-      return interaction.reply({
-        content: '⚠️ Existe uma simulação pendente para este evento. Finalize ou cancele antes de arquivar.',
-        ephemeral: true
-      });
-    }
-
-    if (simulacao && !simulacao.pago) {
-      return interaction.reply({
-        content: '⚠️ O split deste evento ainda não foi pago aos participantes!',
-        ephemeral: true
-      });
-    }
-
-    const canalLoot = interaction.channel;
-    if (canalLoot) {
-      await canalLoot.setName(`📁-${evento.nome.toLowerCase().replace(/\s+/g, '-')}`);
-      
-      const embedArquivo = new EmbedBuilder()
-        .setTitle('✅ Evento Arquivado')
-        .setDescription(`Evento **${evento.nome}** foi arquivado e todos os pagamentos foram processados.`)
-        .setColor(0x57F287)
-        .addFields(
-          { name: '💰 Total Distribuído', value: `🪙 ${simulacao?.resultado?.valorDistribuir?.toLocaleString() || 0}`, inline: true },
-          { name: '💸 Taxa Guilda', value: `🪙 ${simulacao?.resultado?.taxa?.toLocaleString() || 0}`, inline: true },
-          { name: '👥 Participantes', value: `${Object.keys(simulacao?.resultado?.distribuicao || {}).length}`, inline: true }
-        )
-        .setTimestamp();
-
-      await canalLoot.send({ embeds: [embedArquivo] });
-    }
-
-    await interaction.reply({
-      content: '✅ Evento arquivado com sucesso!',
-      ephemeral: true
-    });
   }
 
-  // 🆕 CORREÇÃO IMPORTANTE: Usar editReply quando já deferred
   static async handleConfirmarSplit(interaction, eventId) {
     try {
       const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
       const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
 
       if (!isADM && !isCaller) {
-        // Como já foi deferred no buttonHandler, usar editReply
         return interaction.editReply({
           content: '❌ Apenas ADMs ou Callers podem confirmar o pagamento!',
           embeds: [],
@@ -368,7 +449,7 @@ class LootSplitHandler {
         });
       }
 
-      // 🆕 CORREÇÃO: Usar editReply já que foi deferred no buttonHandler
+      // 🆕 AGORA COM BOTÃO DE ARQUIVAR APENAS APÓS PAGAMENTO
       await interaction.editReply({
         content: `✅ **Lootsplit confirmado e pagamentos realizados!**`,
         embeds: [embedConfirmacao],
@@ -386,41 +467,24 @@ class LootSplitHandler {
 
     } catch (error) {
       console.error('[LOOTSPLIT] Erro ao confirmar split:', error);
-      // Usar editReply pois já foi deferred
       await interaction.editReply({
         content: `❌ Erro ao processar pagamento: ${error.message}`,
         embeds: [],
         components: []
-      }).catch(() => {
-        // Se falhar, tenta followUp
-        interaction.followUp({
-          content: `❌ Erro ao processar pagamento: ${error.message}`,
-          ephemeral: true
-        }).catch(() => {});
       });
     }
   }
 
   static async handleResimular(interaction, eventId) {
-    // Resimular abre modal, então não pode ter sido deferred
-    // Mas como buttonHandler não deferiu para resimular (já que abre modal), podemos usar reply normal
     const modal = LootSplitUI.createSimulationModal(eventId);
     await interaction.showModal(modal);
   }
 
   static async handleCancelarSplit(interaction, eventId) {
-    // Já foi deferred no buttonHandler
     await interaction.editReply({
       content: '❌ Simulação cancelada. Clique em "Simular Lootsplit" para tentar novamente.',
       embeds: [],
       components: []
-    }).catch(async () => {
-      // Se falhar, tenta update
-      await interaction.update({
-        content: '❌ Simulação cancelada. Clique em "Simular Lootsplit" para tentar novamente.',
-        embeds: [],
-        components: []
-      }).catch(() => {});
     });
   }
 }
