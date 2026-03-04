@@ -28,10 +28,13 @@ class LootSplitHandler {
       console.log(`[LOOTSPLIT] Iniciando simulação para evento ${eventId}`);
       
       const valorInput = interaction.fields.getTextInputValue('valor_total');
+      // 🆕 NOVO: Ler valor do reparo
+      const reparoInput = interaction.fields.getTextInputValue('valor_reparo') || '0';
       const ajustesInput = interaction.fields.getTextInputValue('ajustes') || '';
 
       // Remover tudo que não é número
       const valorTotal = parseInt(valorInput.replace(/\D/g, ''));
+      const valorReparo = parseInt(reparoInput.replace(/\D/g, '')) || 0;
 
       if (isNaN(valorTotal) || valorTotal <= 0) {
         console.log(`[LOOTSPLIT] Valor inválido: ${valorInput}`);
@@ -41,7 +44,15 @@ class LootSplitHandler {
         });
       }
 
-      console.log(`[LOOTSPLIT] Valor total: ${valorTotal}`);
+      // Validar que reparo não é maior que o loot
+      if (valorReparo > valorTotal) {
+        return interaction.reply({
+          content: '❌ O valor do reparo não pode ser maior que o valor total do loot!',
+          ephemeral: true
+        });
+      }
+
+      console.log(`[LOOTSPLIT] Valor total: ${valorTotal}, Reparo: ${valorReparo}`);
 
       const ajustes = {};
       if (ajustesInput) {
@@ -77,7 +88,6 @@ class LootSplitHandler {
 
       console.log(`[LOOTSPLIT] Evento encontrado: ${evento.nome}`);
 
-      // 🆕 CORREÇÃO: Verificar se LootSplitCore.calcularDivisao existe
       if (!LootSplitCore || typeof LootSplitCore.calcularDivisao !== 'function') {
         console.error('[LOOTSPLIT] LootSplitCore.calcularDivisao não encontrado!');
         return interaction.reply({
@@ -86,15 +96,17 @@ class LootSplitHandler {
         });
       }
 
-      const resultado = LootSplitCore.calcularDivisao(evento, valorTotal, ajustes);
+      // 🆕 NOVO: Calcular com reparo - subtrair reparo do valor total antes de dividir
+      const resultado = LootSplitCore.calcularDivisao(evento, valorTotal, valorReparo, ajustes);
       console.log(`[LOOTSPLIT] Cálculo realizado:`, resultado);
 
-      // Salvar simulação
+      // Salvar simulação incluindo reparo
       if (LootSplitCore.salvarSimulacao) {
-        await LootSplitCore.salvarSimulacao(evento, resultado);
+        await LootSplitCore.salvarSimulacao(evento, resultado, valorReparo);
       }
 
-      const embedResultado = LootSplitUI.createSimulationResultEmbed(evento, valorTotal, resultado);
+      // 🆕 ATUALIZADO: Passar valor do reparo para o embed
+      const embedResultado = LootSplitUI.createSimulationResultEmbed(evento, valorTotal, valorReparo, resultado);
 
       const botoes = new ActionRowBuilder()
         .addComponents(
@@ -288,7 +300,7 @@ class LootSplitHandler {
     await LootSplitCore.finalizarSplit(evento, simulacao.resultado, interaction);
 
     await interaction.update({
-      content: `✅ **Lootsplit confirmado e pagamentos realizados!**\n💰 Total distribuído: 🪙 ${simulacao.resultado.valorDistribuir.toLocaleString()}\n💸 Taxa guilda: 🪙 ${simulacao.resultado.taxa.toLocaleString()}`,
+      content: `✅ **Lootsplit confirmado e pagamentos realizados!**\n💰 Total distribuído: 🪙 ${simulacao.resultado.valorDistribuir.toLocaleString()}\n💸 Taxa guilda: 🪙 ${simulacao.resultado.taxa.toLocaleString()}${simulacao.valorReparo ? `\n🔧 Reparo: 🪙 ${simulacao.valorReparo.toLocaleString()}` : ''}`,
       components: []
     });
   }
