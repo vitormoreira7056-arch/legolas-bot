@@ -56,6 +56,30 @@ class EventActions {
     }
   }
 
+  static async atualizarPainelEvento(interaction, eventId) {
+    try {
+      const event = EventActions.activeEvents.get(eventId);
+      if (!event) return;
+
+      const channel = await interaction.guild.channels.fetch(event.textChannelId || event.participarChannelId).catch(() => null);
+      if (!channel) return;
+
+      const message = await channel.messages.fetch(event.painelMessageId || event.participarMessageId).catch(() => null);
+      if (!message) return;
+
+      // 🆕 CORREÇÃO: Usar sempre o método do EventHandler para gerar embed correto
+      const criador = await interaction.guild.members.fetch(event.criadorId || event.criador).catch(() => null);
+      const embed = EventHandler.createEventEmbed(event, criador);
+
+      // 🆕 CORREÇÃO: Usar sempre o método do EventHandler para gerar botões corretos
+      const buttons = EventHandler.createEventButtonsByStatus(event);
+
+      await message.edit({ embeds: [embed], components: buttons });
+    } catch (error) {
+      console.error('Erro ao atualizar painel:', error);
+    }
+  }
+
   static async handleParticipar(interaction, eventId) {
     const event = EventActions.activeEvents.get(eventId);
 
@@ -66,7 +90,7 @@ class EventActions {
       });
     }
 
-    if (event.status === 'finalizado') {
+    if (event.status === 'finalizado' || event.status === 'encerrado') {
       return interaction.reply({
         content: '❌ Este evento já foi finalizado!',
         ephemeral: true
@@ -80,7 +104,6 @@ class EventActions {
       });
     }
 
-    // 🆕 CORREÇÃO: Verificar se participantes existe, se não, criar array vazio
     if (!event.participantes) {
       event.participantes = [];
     }
@@ -101,7 +124,6 @@ class EventActions {
 
     event.participantes.push(interaction.user.id);
 
-    // 🆕 CORREÇÃO: Usar participacaoIndividual (do eventHandler) em vez de presenceData
     if (!event.participacaoIndividual) {
       event.participacaoIndividual = new Map();
     }
@@ -114,33 +136,8 @@ class EventActions {
       entradaAtual: event.status === 'em_andamento' ? Date.now() : null
     });
 
-    try {
-      const channel = await interaction.guild.channels.fetch(event.participarChannelId || event.textChannelId);
-      const message = await channel.messages.fetch(event.participarMessageId || event.painelMessageId);
-
-      const embed = EventEmbeds.createEventParticipationEmbed ? 
-        EventEmbeds.createEventParticipationEmbed(event, interaction.guild.members.cache.get(event.criador || event.criadorId)) :
-        EventHandler.createEventEmbed(event, interaction.guild.members.cache.get(event.criador || event.criadorId));
-      
-      let buttons;
-      if (EventHandler.createEventButtonsByStatus) {
-        buttons = EventHandler.createEventButtonsByStatus(event);
-      } else {
-        // Fallback para botões básicos
-        const row = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder()
-              .setCustomId(`evt_participar_${eventId}`)
-              .setLabel('✅ Participar')
-              .setStyle(ButtonStyle.Success)
-          );
-        buttons = [row];
-      }
-
-      await message.edit({ embeds: [embed], components: buttons });
-    } catch (error) {
-      console.error('Erro ao atualizar mensagem do evento:', error);
-    }
+    // 🆕 CORREÇÃO: Usar o método centralizado para atualizar o painel
+    await this.atualizarPainelEvento(interaction, eventId);
 
     await interaction.reply({
       content: `✅ Você entrou no evento **${event.nome}**!\n🔊 Canal de voz: <#${event.voiceChannelId}>`,
@@ -162,7 +159,7 @@ class EventActions {
       });
     }
 
-    const isCreator = (event.criador || event.criadorId) === interaction.user.id;
+    const isCreator = (event.criadorId || event.criador) === interaction.user.id;
     const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
     const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
 
@@ -173,22 +170,25 @@ class EventActions {
       });
     }
 
-    if (event.status !== 'aguardando') {
+    if (event.status !== 'aguardando' && event.status !== 'pausado') {
       return interaction.reply({
-        content: '❌ O evento já foi iniciado ou está pausado!',
+        content: '❌ O evento já foi iniciado!',
         ephemeral: true
       });
     }
 
+    const estavaPausado = event.status === 'pausado';
     event.status = 'em_andamento';
-    event.iniciadoEm = Date.now();
 
-    // Garantir que participacaoIndividual existe
+    if (!event.iniciadoEm) {
+      event.iniciadoEm = Date.now();
+    }
+
     if (!event.participacaoIndividual) {
       event.participacaoIndividual = new Map();
     }
 
-    // Registrar entrada para participantes existentes
+    // Registrar entrada para participantes
     for (const userId of (event.participantes || [])) {
       if (!event.participacaoIndividual.has(userId)) {
         const member = await interaction.guild.members.fetch(userId).catch(() => null);
@@ -201,19 +201,21 @@ class EventActions {
         });
       } else {
         const part = event.participacaoIndividual.get(userId);
-        part.entradaAtual = Date.now();
+        if (!part.entradaAtual) part.entradaAtual = Date.now();
       }
     }
 
-    // Mover todos os participantes para o canal de voz automaticamente
+    // Mover participantes para canal de voz
+    let movidos = 0;
     try {
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId);
       if (voiceChannel) {
         for (const userId of (event.participantes || [])) {
           try {
             const member = await interaction.guild.members.fetch(userId);
-            if (member && member.voice.channel) {
+            if (member && member.voice.channel && member.voice.channel.id !== event.voiceChannelId) {
               await member.voice.setChannel(voiceChannel);
+              movidos++;
             }
           } catch (moveError) {
             console.error(`Não foi possível mover ${userId}:`, moveError.message);
@@ -221,28 +223,17 @@ class EventActions {
         }
       }
     } catch (error) {
-      console.error('Erro ao mover participantes para o canal de voz:', error);
+      console.error('Erro ao mover participantes:', error);
     }
 
-    try {
-      const channel = await interaction.guild.channels.fetch(event.participarChannelId || event.textChannelId);
-      const message = await channel.messages.fetch(event.participarMessageId || event.painelMessageId);
+    // 🆕 CORREÇÃO: Atualizar painel imediatamente após mudar status
+    await this.atualizarPainelEvento(interaction, eventId);
 
-      const embed = EventEmbeds.createEventParticipationEmbed ? 
-        EventEmbeds.createEventParticipationEmbed(event, interaction.guild.members.cache.get(event.criador || event.criadorId)) :
-        EventHandler.createEventEmbed(event, interaction.guild.members.cache.get(event.criador || event.criadorId));
-      
-      const buttons = EventHandler.createEventButtonsByStatus ? 
-        EventHandler.createEventButtonsByStatus(event) : 
-        EventEmbeds.createRunningButtons(eventId);
-
-      await message.edit({ embeds: [embed], components: buttons });
-    } catch (error) {
-      console.error('Erro ao atualizar mensagem:', error);
-    }
+    let msg = estavaPausado ? '▶️ Evento retomado!' : '▶️ Evento iniciado!';
+    if (movidos > 0) msg += `\n🔄 ${movidos} participante(s) movido(s) para o canal de voz.`;
 
     await interaction.reply({
-      content: `▶️ Evento **${event.nome}** iniciado! Todos os participantes foram movidos para o canal de voz!`,
+      content: msg,
       ephemeral: true
     });
   }
@@ -257,7 +248,7 @@ class EventActions {
       });
     }
 
-    const isCreator = (event.criador || event.criadorId) === interaction.user.id;
+    const isCreator = (event.criadorId || event.criador) === interaction.user.id;
     const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
     const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
 
@@ -294,22 +285,8 @@ class EventActions {
       }
     }
 
-    try {
-      const channel = await interaction.guild.channels.fetch(event.participarChannelId || event.textChannelId);
-      const message = await channel.messages.fetch(event.participarMessageId || event.painelMessageId);
-
-      const embed = EventEmbeds.createEventParticipationEmbed ? 
-        EventEmbeds.createEventParticipationEmbed(event, interaction.guild.members.cache.get(event.criador || event.criadorId)) :
-        EventHandler.createEventEmbed(event, interaction.guild.members.cache.get(event.criador || event.criadorId));
-      
-      const buttons = EventHandler.createEventButtonsByStatus ? 
-        EventHandler.createEventButtonsByStatus(event) : 
-        EventEmbeds.createPausedButtons(eventId);
-
-      await message.edit({ embeds: [embed], components: buttons });
-    } catch (error) {
-      console.error('Erro ao atualizar mensagem:', error);
-    }
+    // 🆕 CORREÇÃO: Atualizar painel imediatamente
+    await this.atualizarPainelEvento(interaction, eventId);
 
     await interaction.reply({
       content: `⏸️ Evento **${event.nome}** pausado.`,
@@ -327,53 +304,25 @@ class EventActions {
       });
     }
 
-    const isCreator = (event.criador || event.criadorId) === interaction.user.id;
-    const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
-    const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
-
-    if (!isCreator && !isADM && !isCaller) {
-      return interaction.reply({
-        content: '❌ Apenas o criador, ADMs ou Callers podem retomar o evento!',
-        ephemeral: true
-      });
-    }
-
-    if (event.status !== 'pausado') {
-      return interaction.reply({
-        content: '❌ O evento não está pausado!',
-        ephemeral: true
-      });
-    }
-
-    event.status = 'em_andamento';
-
-    // Retomar tempo para participantes
-    if (event.participacaoIndividual) {
-      const agora = Date.now();
-      for (const participacao of event.participacaoIndividual.values()) {
-        participacao.entradaAtual = agora;
+    // Registrar saída do participante
+    if (event.participacaoIndividual && event.participacaoIndividual.has(interaction.user.id)) {
+      const participacao = event.participacaoIndividual.get(interaction.user.id);
+      if (participacao.entradaAtual && event.status === 'em_andamento') {
+        const agora = Date.now();
+        const tempoSessao = agora - participacao.entradaAtual;
+        participacao.tempos.push({
+          entrada: participacao.entradaAtual,
+          saida: agora,
+          duracao: tempoSessao
+        });
+        participacao.tempoTotal += tempoSessao;
+        participacao.entradaAtual = null;
       }
     }
 
-    try {
-      const channel = await interaction.guild.channels.fetch(event.participarChannelId || event.textChannelId);
-      const message = await channel.messages.fetch(event.participarMessageId || event.painelMessageId);
-
-      const embed = EventEmbeds.createEventParticipationEmbed ? 
-        EventEmbeds.createEventParticipationEmbed(event, interaction.guild.members.cache.get(event.criador || event.criadorId)) :
-        EventHandler.createEventEmbed(event, interaction.guild.members.cache.get(event.criador || event.criadorId));
-      
-      const buttons = EventHandler.createEventButtonsByStatus ? 
-        EventHandler.createEventButtonsByStatus(event) : 
-        EventEmbeds.createRunningButtons(eventId);
-
-      await message.edit({ embeds: [embed], components: buttons });
-    } catch (error) {
-      console.error('Erro ao atualizar mensagem:', error);
-    }
-
+    await this.atualizarPainelEvento(interaction, eventId);
     await interaction.reply({
-      content: `▶️ Evento **${event.nome}** retomado!`,
+      content: '⏸️ Você saiu do evento. Seu tempo foi registrado.',
       ephemeral: true
     });
   }
@@ -388,7 +337,7 @@ class EventActions {
       });
     }
 
-    const isCreator = (event.criador || event.criadorId) === interaction.user.id;
+    const isCreator = (event.criadorId || event.criador) === interaction.user.id;
     const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
     const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
 
@@ -400,23 +349,7 @@ class EventActions {
     }
 
     event.trancado = true;
-
-    try {
-      const channel = await interaction.guild.channels.fetch(event.participarChannelId || event.textChannelId);
-      const message = await channel.messages.fetch(event.participarMessageId || event.painelMessageId);
-
-      const embed = EventEmbeds.createEventParticipationEmbed ? 
-        EventEmbeds.createEventParticipationEmbed(event, interaction.guild.members.cache.get(event.criador || event.criadorId)) :
-        EventHandler.createEventEmbed(event, interaction.guild.members.cache.get(event.criador || event.criadorId));
-      
-      const buttons = EventHandler.createEventButtonsByStatus ? 
-        EventHandler.createEventButtonsByStatus(event) : 
-        EventEmbeds.createLockedButtons(eventId);
-
-      await message.edit({ embeds: [embed], components: buttons });
-    } catch (error) {
-      console.error('Erro ao atualizar mensagem:', error);
-    }
+    await this.atualizarPainelEvento(interaction, eventId);
 
     await interaction.reply({
       content: `🔒 Evento **${event.nome}** trancado! Novos participantes não podem entrar.`,
@@ -434,7 +367,7 @@ class EventActions {
       });
     }
 
-    const isCreator = (event.criador || event.criadorId) === interaction.user.id;
+    const isCreator = (event.criadorId || event.criador) === interaction.user.id;
     const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
     const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
 
@@ -446,30 +379,7 @@ class EventActions {
     }
 
     event.trancado = false;
-
-    try {
-      const channel = await interaction.guild.channels.fetch(event.participarChannelId || event.textChannelId);
-      const message = await channel.messages.fetch(event.participarMessageId || event.painelMessageId);
-
-      const embed = EventEmbeds.createEventParticipationEmbed ? 
-        EventEmbeds.createEventParticipationEmbed(event, interaction.guild.members.cache.get(event.criador || event.criadorId)) :
-        EventHandler.createEventEmbed(event, interaction.guild.members.cache.get(event.criador || event.criadorId));
-      
-      let buttons;
-      if (EventHandler.createEventButtonsByStatus) {
-        buttons = EventHandler.createEventButtonsByStatus(event);
-      } else if (event.status === 'em_andamento') {
-        buttons = EventEmbeds.createRunningButtons(eventId);
-      } else if (event.status === 'pausado') {
-        buttons = EventEmbeds.createPausedButtons(eventId);
-      } else {
-        buttons = EventEmbeds.createWaitingButtons(eventId);
-      }
-
-      await message.edit({ embeds: [embed], components: buttons });
-    } catch (error) {
-      console.error('Erro ao atualizar mensagem:', error);
-    }
+    await this.atualizarPainelEvento(interaction, eventId);
 
     await interaction.reply({
       content: `🔓 Evento **${event.nome}** destrancado! Novos participantes podem entrar.`,
@@ -487,7 +397,7 @@ class EventActions {
       });
     }
 
-    const isCreator = (event.criador || event.criadorId) === interaction.user.id;
+    const isCreator = (event.criadorId || event.criador) === interaction.user.id;
     const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
 
     if (!isCreator && !isADM) {
@@ -507,8 +417,8 @@ class EventActions {
     }
 
     try {
-      const channel = await interaction.guild.channels.fetch(event.participarChannelId || event.textChannelId);
-      const message = await channel.messages.fetch(event.participarMessageId || event.painelMessageId);
+      const channel = await interaction.guild.channels.fetch(event.textChannelId || event.participarChannelId);
+      const message = await channel.messages.fetch(event.painelMessageId || event.participarMessageId);
 
       const embed = new EmbedBuilder()
         .setTitle(`❌ **${event.nome}** - CANCELADO`)
@@ -541,7 +451,7 @@ class EventActions {
       });
     }
 
-    const isCreator = (event.criador || event.criadorId) === interaction.user.id;
+    const isCreator = (event.criadorId || event.criador) === interaction.user.id;
     const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
     const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
 
@@ -562,7 +472,7 @@ class EventActions {
     event.status = 'encerrado';
     event.finalizadoEm = Date.now();
 
-    // Calcular tempo final para todos os participantes presentes
+    // Calcular tempo final
     if (event.participacaoIndividual) {
       const agora = Date.now();
       for (const participacao of event.participacaoIndividual.values()) {
@@ -580,12 +490,7 @@ class EventActions {
     }
 
     try {
-      // 1. Buscar categoria de eventos encerrados
-      const categoriaEncerrados = interaction.guild.channels.cache.find(
-        c => c.name === '📁 EVENTOS ENCERRADOS' && c.type === ChannelType.GuildCategory
-      );
-
-      // 2. Buscar canal de voz do evento e mover participantes para Aguardando-Evento
+      // Mover participantes para Aguardando-Evento
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId).catch(() => null);
       const canalAguardando = interaction.guild.channels.cache.find(c => c.name === '🔊╠Aguardando-Evento');
 
@@ -597,14 +502,17 @@ class EventActions {
               await member.voice.setChannel(canalAguardando.id);
             }
           } catch (moveError) {
-            console.log(`Não foi possível mover ${userId} para aguardando:`, moveError.message);
+            console.log(`Não foi possível mover ${userId}:`, moveError.message);
           }
         }
       }
 
-      // 3. Criar novo canal de texto
-      let textChannel;
+      // Criar canal de texto para loot
+      const categoriaEncerrados = interaction.guild.channels.cache.find(
+        c => c.name === '📁 EVENTOS ENCERRADOS' && c.type === ChannelType.GuildCategory
+      );
 
+      let textChannel;
       if (categoriaEncerrados) {
         textChannel = await interaction.guild.channels.create({
           name: `📁-${event.nome.toLowerCase().replace(/\s+/g, '-')}`,
@@ -624,21 +532,33 @@ class EventActions {
         });
       }
 
-      // 4. Deletar canal de voz original
       if (voiceChannel) {
         await voiceChannel.delete('Evento finalizado').catch(console.error);
       }
 
-      // 5. Criar embed de loot split no novo canal de texto
+      // Atualizar mensagem original
+      const channel = await interaction.guild.channels.fetch(event.textChannelId || event.participarChannelId).catch(() => null);
+      if (channel) {
+        const message = await channel.messages.fetch(event.painelMessageId || event.participarMessageId).catch(() => null);
+        if (message) {
+          const embedFinal = new EmbedBuilder()
+            .setTitle(`🏁 **${event.nome}** - FINALIZADO`)
+            .setDescription(`Evento finalizado por ${interaction.user}\n📁 Canal de arquivamento: ${textChannel ? `<#${textChannel.id}>` : 'Não criado'}`)
+            .setColor(0x95A5A6)
+            .setTimestamp();
+
+          await message.edit({ embeds: [embedFinal], components: [] });
+        }
+      }
+
+      // Enviar painel de loot no novo canal
       if (textChannel) {
-        const totalParticipants = (event.participantes || []).length;
         const duracao = event.iniciadoEm ? Math.floor((Date.now() - event.iniciadoEm) / 60000) : 0;
-        
         const embedLoot = new EmbedBuilder()
           .setTitle(`💰 **LOOT SPLIT - ${event.nome}**`)
           .setDescription(
             `> Evento finalizado por ${interaction.user}\n\n` +
-            `👥 **Participantes:** ${totalParticipants}\n` +
+            `👥 **Participantes:** ${(event.participantes || []).length}\n` +
             `⏱️ **Duração:** ${duracao} minutos\n\n` +
             `Clique no botão abaixo para simular a divisão do loot:`
           )
@@ -663,27 +583,12 @@ class EventActions {
         });
       }
 
-      // 6. Atualizar mensagem original no canal participar
-      const channel = await interaction.guild.channels.fetch(event.participarChannelId || event.textChannelId).catch(() => null);
-      if (channel) {
-        const message = await channel.messages.fetch(event.participarMessageId || event.painelMessageId).catch(() => null);
-        if (message) {
-          const embedFinal = new EmbedBuilder()
-            .setTitle(`🏁 **${event.nome}** - FINALIZADO`)
-            .setDescription(`Evento finalizado por ${interaction.user}\n📁 Canal de arquivamento: ${textChannel ? `<#${textChannel.id}>` : 'Não criado'}`)
-            .setColor(0x95A5A6)
-            .setTimestamp();
-
-          await message.edit({ embeds: [embedFinal], components: [] });
-        }
-      }
-
-      // 7. Salvar estatísticas
+      // Salvar estatísticas
       if (EventStatsHandler.saveEventStats) {
         await EventStatsHandler.saveEventStats(event, interaction.guild);
       }
 
-      // 8. Remover do mapa de eventos ativos após 1 hora
+      // Remover do mapa após 1 hora
       setTimeout(() => {
         EventActions.activeEvents.delete(eventId);
       }, 3600000);
