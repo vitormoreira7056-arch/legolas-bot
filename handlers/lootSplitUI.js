@@ -63,10 +63,10 @@ class LootSplitUI {
     participantesDetalhados.sort((a, b) => b.tempoMs - a.tempoMs);
 
     const fields = [];
-    
+
     fields.push({
       name: '📊 INFORMAÇÕES GERAIS',
-      value: 
+      value:
         `🕐 **Duração Total:** ${duracaoFormatada}\n` +
         `⏱️ **Tempo desde Início:** ${horasDesdeInicio}h ${minutosDesdeInicio}m\n` +
         `👥 **Total de Participantes:** ${participantesDetalhados.length}\n` +
@@ -81,9 +81,9 @@ class LootSplitUI {
       for (let i = 0; i < participantesDetalhados.length; i++) {
         const p = participantesDetalhados[i];
         const medalha = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-        
-        const linha = `${medalha} <@${p.userId}> **${p.nickname}**\n   ⏱️ ${p.tempoFormatado} (${p.porcentagem}%)\n\n`;
-        
+
+        const linha = `${medalha} <@${p.userId}> **${p.nickname}**\n ⏱️ ${p.tempoFormatado} (${p.porcentagem}%)\n\n`;
+
         if ((descricaoParticipantes + linha).length > 1024) {
           fields.push({
             name: `👥 PARTICIPANTES ${numeroCampo > 1 ? `(CONT. ${numeroCampo})` : ''}`,
@@ -119,11 +119,13 @@ class LootSplitUI {
       .setTimestamp();
 
     embed.addFields(fields);
-    
-    embed.setFooter({ 
-      text: `Evento ID: ${evento.id} • Taxa: ${taxaGuilda}% • Use os botões abaixo para gerenciar` 
+
+    embed.setFooter({
+      text: `Evento ID: ${evento.id} • Taxa: ${taxaGuilda}% • Use os botões abaixo para gerenciar`
     });
 
+    // 🆕 CORREÇÃO: Removido botão "Arquivar Evento" do painel inicial
+    // Agora só aparece após confirmação de pagamento
     const botoes = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
@@ -133,17 +135,12 @@ class LootSplitUI {
         new ButtonBuilder()
           .setCustomId(`atualizar_participacao_${evento.id}`)
           .setLabel('📝 Atualizar Participação')
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId(`arquivar_evento_${evento.id}`)
-          .setLabel('📁 Arquivar Evento')
-          .setStyle(ButtonStyle.Success)
+          .setStyle(ButtonStyle.Secondary)
       );
 
     return { embeds: [embed], components: [botoes] };
   }
 
-  // 🆕 ATUALIZADO: Modal com campo de reparo
   static createSimulationModal(eventId) {
     const modal = new ModalBuilder()
       .setCustomId(`modal_simulate_${eventId}`)
@@ -187,8 +184,8 @@ class LootSplitUI {
 
     const dadosInput = new TextInputBuilder()
       .setCustomId('dados_participacao')
-      .setLabel('Dados de participação (JSON ou formato texto)')
-      .setPlaceholder('@usuario:HH:MM:SS ou [{"userId":"123","tempo":"01:30:00"}]')
+      .setLabel('Dados de participação (formato: @user:HH:MM:SS)')
+      .setPlaceholder('@Jax:00:30:00\n@User2:01:15:00')
       .setStyle(TextInputStyle.Paragraph)
       .setRequired(true);
 
@@ -197,23 +194,21 @@ class LootSplitUI {
     );
   }
 
-  // 🆕 ATUALIZADO: Mostrar valor do reparo no resultado
   static createSimulationResultEmbed(evento, valorTotal, valorReparo, resultado) {
     const config = ConfigHandler.getConfig(evento.guildId) || {};
     const taxaPercentual = config.taxaGuilda || 10;
-    
-    // Valor após descontar reparo
+
     const valorAposReparo = valorTotal - valorReparo;
     const valorTaxa = Math.floor(valorAposReparo * (taxaPercentual / 100));
     const valorLiquido = valorAposReparo - valorTaxa;
 
     let descricao = `**💰 Valor Total do Loot:** 🪙 ${valorTotal.toLocaleString()}\n`;
-    
+
     if (valorReparo > 0) {
       descricao += `**🔧 Reparo:** -🪙 ${valorReparo.toLocaleString()}\n`;
       descricao += `**💵 Valor Líquido:** 🪙 ${valorAposReparo.toLocaleString()}\n`;
     }
-    
+
     descricao += `**💸 Taxa Guilda (${taxaPercentual}%):** -🪙 ${valorTaxa.toLocaleString()}\n`;
     descricao += `**💎 Total a Dividir:** 🪙 ${valorLiquido.toLocaleString()}\n\n`;
     descricao += `**📊 DIVISÃO POR PARTICIPANTE:**`;
@@ -225,9 +220,9 @@ class LootSplitUI {
       .setTimestamp();
 
     const campos = [];
-    
+
     const distribuicao = resultado?.distribuicao || resultado || {};
-    
+
     for (const [userId, dados] of Object.entries(distribuicao)) {
       let valorStr = `💰 🪙 ${Math.floor(dados.valor || 0).toLocaleString()}`;
       if (dados.ajuste) {
@@ -245,8 +240,8 @@ class LootSplitUI {
       embed.addFields(campos);
     } else {
       embed.addFields(campos.slice(0, 24));
-      embed.setFooter({ 
-        text: `E mais ${campos.length - 24} participantes... • Total: 🪙 ${valorTotal.toLocaleString()}` 
+      embed.setFooter({
+        text: `E mais ${campos.length - 24} participantes... • Total: 🪙 ${valorTotal.toLocaleString()}`
       });
     }
 
