@@ -4,7 +4,8 @@ const ConfigHandler = require('./configHandler');
 class LootSplitUI {
   static createFinishedEventPanel(evento, duracaoTotalMs) {
     const config = ConfigHandler.getConfig(evento.guildId) || {};
-    const taxaGuilda = config.taxaPadrao || 10;
+    // 🆕 CORREÇÃO: Usar taxaGuilda (nome correto da propriedade)
+    const taxaGuilda = config.taxaGuilda || 10;
 
     // Calcular duração total formatada
     const duracaoHoras = Math.floor(duracaoTotalMs / (1000 * 60 * 60));
@@ -12,7 +13,7 @@ class LootSplitUI {
     const duracaoSegundos = Math.floor((duracaoTotalMs % (1000 * 60)) / 1000);
     const duracaoFormatada = `${duracaoHoras.toString().padStart(2, '0')}:${duracaoMinutos.toString().padStart(2, '0')}:${duracaoSegundos.toString().padStart(2, '0')}`;
 
-    // 🆕 MELHORIA: Calcular quando o evento começou (baseado no iniciadoEm ou criadoEm)
+    // Calcular quando o evento começou
     const inicioEvento = evento.iniciadoEm || evento.criadoEm || Date.now();
     const tempoDesdeInicio = Date.now() - inicioEvento;
     const horasDesdeInicio = Math.floor(tempoDesdeInicio / (1000 * 60 * 60));
@@ -49,7 +50,7 @@ class LootSplitUI {
       }
     }
 
-    // 🆕 MELHORIA: Adicionar participantes que estão na lista mas não têm tempo registrado
+    // Adicionar participantes que estão na lista mas não têm tempo registrado
     if (evento.participantes && evento.participantes.length > 0) {
       for (const userId of evento.participantes) {
         if (!participantesDetalhados.find(p => p.userId === userId)) {
@@ -66,7 +67,7 @@ class LootSplitUI {
 
     participantesDetalhados.sort((a, b) => b.tempoMs - a.tempoMs);
 
-    // 🆕 MELHORIA: Criar lista formatada com campos individuais para melhor visualização
+    // Criar lista formatada com campos individuais
     const fields = [];
     
     // Adicionar campo de informações gerais
@@ -80,10 +81,9 @@ class LootSplitUI {
       inline: false
     });
 
-    // 🆕 MELHORIA: Lista de participantes em grupos de 25 (limite do Discord)
+    // Lista de participantes em grupos (limite 1024 chars por campo)
     if (participantesDetalhados.length > 0) {
       let descricaoParticipantes = '';
-      let contador = 0;
       let numeroCampo = 1;
 
       for (let i = 0; i < participantesDetalhados.length; i++) {
@@ -154,7 +154,6 @@ class LootSplitUI {
     return { embeds: [embed], components: [botoes] };
   }
 
-  // 🆕 CORREÇÃO: Método deve ser static e retornar o modal diretamente
   static createSimulationModal(eventId) {
     const modal = new ModalBuilder()
       .setCustomId(`modal_simulate_${eventId}`)
@@ -201,7 +200,8 @@ class LootSplitUI {
 
   static createSimulationResultEmbed(evento, valorTotal, resultado) {
     const config = ConfigHandler.getConfig(evento.guildId) || {};
-    const taxaPercentual = config.taxaPadrao || 10;
+    // 🆕 CORREÇÃO: Usar taxaGuilda aqui também
+    const taxaPercentual = config.taxaGuilda || 10;
     const valorTaxa = Math.floor(valorTotal * (taxaPercentual / 100));
     const valorLiquido = valorTotal - valorTaxa;
 
@@ -217,15 +217,19 @@ class LootSplitUI {
       .setTimestamp();
 
     const campos = [];
-    for (const [userId, dados] of Object.entries(resultado.distribuicao || resultado)) {
-      let valorStr = `💰 🪙 ${Math.floor(dados.valor).toLocaleString()}`;
+    
+    // Verificar se resultado é um objeto válido
+    const distribuicao = resultado?.distribuicao || resultado || {};
+    
+    for (const [userId, dados] of Object.entries(distribuicao)) {
+      let valorStr = `💰 🪙 ${Math.floor(dados.valor || 0).toLocaleString()}`;
       if (dados.ajuste) {
         valorStr += ` (ajuste: ${dados.ajuste})`;
       }
 
       campos.push({
         name: `${dados.nickname || 'Desconhecido'}`,
-        value: `${valorStr}\n⏱️ ${dados.tempoParticipado || '00:00:00'} (${dados.porcentagem}%)`,
+        value: `${valorStr}\n⏱️ ${dados.tempoParticipado || '00:00:00'} (${dados.porcentagem || 0}%)`,
         inline: true
       });
     }
