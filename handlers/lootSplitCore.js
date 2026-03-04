@@ -1,14 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 const ConfigHandler = require('./configHandler');
+const db = require('../utils/database'); // 🆕 ADICIONADO para acesso ao banco
 
 class LootSplitCore {
-  // 🆕 ATUALIZADO: Aceita valorReparo como parâmetro
   static calcularDivisao(evento, valorTotal, valorReparo = 0, ajustes = {}) {
     const config = ConfigHandler.getConfig(evento.guildId) || {};
     const taxaPercentual = config.taxaGuilda || 10;
-    
-    // 🆕 NOVO: Subtrair reparo do valor total antes de calcular taxa e divisão
+
     const valorAposReparo = Math.max(0, valorTotal - valorReparo);
     const valorTaxa = Math.floor(valorAposReparo * (taxaPercentual / 100));
     const valorLiquido = valorAposReparo - valorTaxa;
@@ -17,7 +16,7 @@ class LootSplitCore {
     let tempoTotal = 0;
 
     const participacoes = evento.participacaoIndividual || new Map();
-    
+
     for (const [userId, part] of participacoes) {
       const tempo = part.tempoTotal || part.totalTime || 0;
       participantes.push({
@@ -35,7 +34,7 @@ class LootSplitCore {
       const ajuste = ajustes[p.userId] || 100;
       const valorBase = valorLiquido * porcentagem;
       const valorAjustado = Math.floor(valorBase * (ajuste / 100));
-      
+
       distribuicao[p.userId] = {
         userId: p.userId,
         nickname: p.nickname,
@@ -48,7 +47,7 @@ class LootSplitCore {
 
     return {
       valorTotal,
-      valorReparo, // 🆕 NOVO: Retornar valor do reparo
+      valorReparo,
       taxa: valorTaxa,
       taxaPercentual,
       valorDistribuir: valorLiquido,
@@ -64,11 +63,10 @@ class LootSplitCore {
     return `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
   }
 
-  // 🆕 ATUALIZADO: Aceita valorReparo
   static async salvarSimulacao(evento, resultado, valorReparo = 0) {
     const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
     let dados = {};
-    
+
     try {
       if (fs.existsSync(arquivo)) {
         dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
@@ -78,7 +76,7 @@ class LootSplitCore {
     }
 
     if (!dados[evento.guildId]) dados[evento.guildId] = {};
-    
+
     dados[evento.guildId][evento.id] = {
       evento: {
         id: evento.id,
@@ -87,8 +85,9 @@ class LootSplitCore {
         participantes: Array.from(evento.participacaoIndividual?.entries() || [])
       },
       resultado,
-      valorReparo, // 🆕 NOVO: Salvar reparo
+      valorReparo,
       finalizado: false,
+      pago: false, // 🆕 NOVO: Flag para controle de pagamento
       data: new Date().toISOString()
     };
 
@@ -97,7 +96,7 @@ class LootSplitCore {
 
   static async carregarSimulacao(guildId, eventId) {
     const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
-    
+
     try {
       if (fs.existsSync(arquivo)) {
         const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
@@ -106,25 +105,144 @@ class LootSplitCore {
     } catch (e) {
       console.error('Erro ao carregar simulação:', e);
     }
-    
+
     return null;
   }
 
+  // 🆕 MELHORADO: Agora realiza o pagamento aos participantes
   static async finalizarSplit(evento, resultado, interaction) {
     const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
-    
+
     try {
       const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-      if (dados[evento.guildId]?.[evento.id]) {
-        dados[evento.guildId][evento.id].finalizado = true;
-        dados[evento.guildId][evento.id].dataFinalizacao = new Date().toISOString();
-        fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
-      }
-    } catch (e) {
-      console.error('Erro ao finalizar:', e);
-    }
+      const simulacao = dados[evento.guildId]?.[evento.id];
 
-    return true;
+      if (!simulacao) {
+        throw new Error('Simulação não encontrada');
+      }
+
+      // Verificar se já foi pago para evitar duplicidade
+      if (simulacao.pago) {
+        console.log(`[LOOTSPLIT] Split ${evento.id} já foi pago anteriormente`);
+        return { sucesso: false, jaPago: true };
+      }
+
+      const { distribuicao, taxa, valorReparo } = resultado;
+
+      console.log(`[LOOTSPLIT] Iniciando pagamentos para evento ${evento.id}`);
+      console.log(`[LOOTSPLIT] Total a distribuir: ${Object.values(distribuicao).reduce((a, b) => a + (b.valor || 0), 0)}`);
+      console.log(`[LOOTSPLIT] Taxa guilda: ${taxa}`);
+
+      // 🆕 PAGAR CADA PARTICIPANTE
+      const pagamentosRealizados = [];
+      const erros = [];
+
+      for (const [userId, dadosDistribuicao] of Object.entries(distribuicao)) {
+        try {
+          const valor = Math.floor(dadosDistribuicao.valor || 0);
+          
+          if (valor > 0) {
+            // Adicionar saldo ao usuário
+            const user = db.getUser(userId);
+            user.saldo += valor;
+            user.totalDepositado = (user.totalDepositado || 0) + valor;
+            db.updateUser(userId, user);
+
+            // Registrar transação
+            db.addTransaction('loot_split', userId, valor, {
+              eventoId: evento.id,
+              eventoNome: evento.nome,
+              porcentagem: dadosDistribuicao.porcentagem,
+              tempoParticipado: dadosDistribuicao.tempoParticipado
+            });
+
+            pagamentosRealizados.push({
+              userId,
+              valor,
+              nickname: dadosDistribuicao.nickname
+            });
+
+            console.log(`[LOOTSPLIT] Pago ${valor} para ${dadosDistribuicao.nickname} (${userId})`);
+          }
+        } catch (error) {
+          console.error(`[LOOTSPLIT] Erro ao pagar ${userId}:`, error);
+          erros.push({ userId, erro: error.message });
+        }
+      }
+
+      // 🆕 DEPOSITAR TAXA DA GUILDA NO BANCO DA GUILDA
+      if (taxa > 0) {
+        try {
+          const guildBalance = db.getGuildBalance(evento.guildId);
+          const novoSaldo = guildBalance + taxa;
+          db.addEventLoot(evento.guildId, taxa); // Usa o método do database.js
+          
+          console.log(`[LOOTSPLIT] Taxa de ${taxa} depositada no banco da guilda`);
+        } catch (error) {
+          console.error('[LOOTSPLIT] Erro ao depositar taxa da guilda:', error);
+        }
+      }
+
+      // 🆕 REGISTRAR REPARO SE HOUVER
+      if (valorReparo > 0) {
+        try {
+          db.addTransaction('reparo_guilda', 'SISTEMA', valorReparo, {
+            eventoId: evento.id,
+            eventoNome: evento.nome,
+            descricao: 'Valor descontado para reparo de itens'
+          });
+          console.log(`[LOOTSPLIT] Reparo de ${valorReparo} registrado`);
+        } catch (error) {
+          console.error('[LOOTSPLIT] Erro ao registrar reparo:', error);
+        }
+      }
+
+      // Marcar como finalizado e pago
+      dados[evento.guildId][evento.id].finalizado = true;
+      dados[evento.guildId][evento.id].pago = true;
+      dados[evento.guildId][evento.id].dataFinalizacao = new Date().toISOString();
+      dados[evento.guildId][evento.id].pagamentos = pagamentosRealizados;
+      dados[evento.guildId][evento.id].erros = erros;
+
+      fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
+
+      console.log(`[LOOTSPLIT] Split finalizado. ${pagamentosRealizados.length} pagamentos realizados, ${erros.length} erros`);
+
+      return {
+        sucesso: true,
+        pagamentos: pagamentosRealizados,
+        erros,
+        taxaGuilda: taxa,
+        valorReparo
+      };
+
+    } catch (e) {
+      console.error('[LOOTSPLIT] Erro ao finalizar split:', e);
+      throw e;
+    }
+  }
+
+  // 🆕 NOVO: Verificar se split já foi pago
+  static async verificarPagamento(guildId, eventId) {
+    const simulacao = await this.carregarSimulacao(guildId, eventId);
+    return simulacao?.pago === true;
+  }
+
+  // 🆕 NOVO: Obter resumo do split para exibição
+  static async obterResumoSplit(guildId, eventId) {
+    const simulacao = await this.carregarSimulacao(guildId, eventId);
+    if (!simulacao) return null;
+
+    return {
+      nome: simulacao.evento.nome,
+      valorTotal: simulacao.resultado.valorTotal,
+      valorReparo: simulacao.valorReparo,
+      taxa: simulacao.resultado.taxa,
+      finalizado: simulacao.finalizado,
+      pago: simulacao.pago,
+      data: simulacao.data,
+      totalParticipantes: Object.keys(simulacao.resultado.distribuicao).length
+    };
   }
 }
 
