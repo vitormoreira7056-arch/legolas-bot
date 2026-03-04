@@ -1,7 +1,7 @@
 const { Events } = require('discord.js');
 const ActionHandlers = require('./actions');
 const BankHandler = require('./bank');
-const LootSplitHandler = require('./lootSplitHandler'); // 🆕 ADICIONADO
+const LootSplitHandler = require('./lootSplitHandler');
 
 class ButtonHandler {
   static async handle(interaction, client) {
@@ -91,7 +91,6 @@ class ButtonHandler {
       }
 
       // ========== LOOTSPLIT ==========
-      // IMPORTANTE: NÃO usar deferUpdate antes de showModal!
       if (customId.startsWith('simulate_loot_')) {
         const eventId = customId.replace('simulate_loot_', '');
         console.log(`[LOOTSPLIT] Simulando para evento: ${eventId}`);
@@ -152,6 +151,14 @@ class ButtonHandler {
       if (customId.startsWith('update_participation_')) {
         const eventId = customId.replace('update_participation_', '');
         await ActionHandlers.handleUpdateParticipation(interaction, eventId);
+        return;
+      }
+
+      // 🆕 NOVO: Handler para arquivar evento (botão que aparece após pagamento)
+      if (customId.startsWith('arquivar_evento_')) {
+        const eventId = customId.replace('arquivar_evento_', '');
+        await interaction.deferUpdate().catch(() => {});
+        await LootSplitHandler.handleArquivarEvento(interaction, eventId);
         return;
       }
 
