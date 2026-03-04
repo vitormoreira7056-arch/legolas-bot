@@ -1,267 +1,316 @@
+const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, PermissionFlagsBits } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 class EventStatsHandler {
-  static async initializePanel(guild, channel) {
-    const embed = new EmbedBuilder()
-      .setTitle('📊 **ESTATÍSTICAS DE EVENTOS**')
-      .setDescription('Aqui você pode acompanhar as estatísticas de participação em eventos.')
-      .setColor(0x3498DB)
-      .addFields(
-        { name: '📅 Período', value: 'Últimos 30 dias', inline: true },
-        { name: '🔥 Eventos Realizados', value: '0', inline: true },
-        { name: '👥 Total de Participações', value: '0', inline: true }
-      )
-      .setTimestamp();
+  static statsFile = path.join(__dirname, '..', 'data', 'eventStats.json');
+  static messageIdFile = path.join(__dirname, '..', 'data', 'eventStatsMessage.json');
 
-    const buttons = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId('stats_filter_7d')
-          .setLabel('7 dias')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId('stats_filter_2w')
-          .setLabel('2 semanas')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId('stats_filter_1m')
-          .setLabel('1 mês')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId('stats_filter_all')
-          .setLabel('Tudo')
-          .setStyle(ButtonStyle.Secondary)
-      );
+  // Estrutura: { userId: { events: [{eventId, date, name}], totalParticipated: 0 } }
+  static stats = new Map();
+  static currentFilter = 'total'; // Filtro atual do painel
 
-    const msg = await channel.send({ embeds: [embed], components: [buttons] });
-    
-    // Salvar ID da mensagem do painel
-    const arquivo = path.join(__dirname, '..', 'data', 'eventStats.json');
-    let dados = {};
-    
+  static loadStats() {
     try {
-      if (fs.existsSync(arquivo)) {
-        dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
+      if (fs.existsSync(this.statsFile)) {
+        const data = JSON.parse(fs.readFileSync(this.statsFile, 'utf8'));
+        this.stats = new Map(Object.entries(data));
+        console.log('✅ Estatísticas de eventos carregadas');
       }
     } catch (error) {
-      console.error('Erro ao ler stats:', error);
+      console.error('Erro ao carregar stats:', error);
+      this.stats = new Map();
     }
-
-    if (!dados[guild.id]) {
-      dados[guild.id] = { historico: [], painel: null };
-    }
-    
-    dados[guild.id].painel = {
-      channelId: channel.id,
-      messageId: msg.id,
-      lastUpdate: Date.now()
-    };
-
-    try {
-      fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
-    } catch (error) {
-      console.error('Erro ao salvar painel:', error);
-    }
-
-    return msg;
   }
 
-  static async saveEventStats(evento, guild) {
-    const arquivo = path.join(__dirname, '..', 'data', 'eventStats.json');
-    let dados = {};
-    
+  static saveStats() {
     try {
-      if (fs.existsSync(arquivo)) {
-        dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-      }
-    } catch (error) {
-      console.error('Erro ao ler stats:', error);
-    }
-
-    if (!dados[guild.id]) {
-      dados[guild.id] = { historico: [], painel: null };
-    }
-
-    const participacaoSerializada = {};
-    if (evento.participacaoIndividual) {
-      if (evento.participacaoIndividual instanceof Map) {
-        for (const [userId, part] of evento.participacaoIndividual) {
-          participacaoSerializada[userId] = {
-            userId: part.userId,
-            nickname: part.nickname,
-            tempos: part.tempos || [],
-            tempoTotal: part.tempoTotal,
-            entradaAtual: null
-          };
-        }
-      } else {
-        Object.assign(participacaoSerializada, evento.participacaoIndividual);
-      }
-    }
-
-    const statsEvento = {
-      id: evento.id,
-      nome: evento.nome,
-      tipo: evento.tipo,
-      criadorId: evento.criadorId,
-      iniciadoEm: evento.iniciadoEm,
-      finalizadoEm: evento.finalizadoEm,
-      duracaoTotal: evento.duracaoTotal,
-      participantes: evento.participantes || [],
-      participacaoIndividual: participacaoSerializada,
-      status: 'encerrado',
-      canalTextoId: evento.textChannelId,
-      dataRegistro: new Date().toISOString()
-    };
-
-    const indexExistente = dados[guild.id].historico.findIndex(e => e.id === evento.id);
-    if (indexExistente >= 0) {
-      dados[guild.id].historico[indexExistente] = statsEvento;
-    } else {
-      dados[guild.id].historico.push(statsEvento);
-    }
-    
-    if (dados[guild.id].historico.length > 100) {
-      dados[guild.id].historico = dados[guild.id].historico.slice(-100);
-    }
-
-    try {
-      fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
+      const dir = path.dirname(this.statsFile);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(this.statsFile, JSON.stringify(Object.fromEntries(this.stats), null, 2));
     } catch (error) {
       console.error('Erro ao salvar stats:', error);
     }
-    
-    await this.updatePanel(guild);
   }
 
-  static async updatePanel(guild) {
-    const arquivo = path.join(__dirname, '..', 'data', 'eventStats.json');
-    
+  static saveMessageId(channelId, messageId) {
     try {
-      if (!fs.existsSync(arquivo)) return;
-      
-      const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-      const guildData = dados[guild.id];
-      
-      if (!guildData?.painel) return;
+      const dir = path.dirname(this.messageIdFile);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(this.messageIdFile, JSON.stringify({ channelId, messageId, filter: this.currentFilter }));
+    } catch (error) {
+      console.error('Erro ao salvar messageId:', error);
+    }
+  }
 
-      const channel = guild.channels.cache.get(guildData.painel.channelId);
-      if (!channel) return;
+  static loadMessageId() {
+    try {
+      if (fs.existsSync(this.messageIdFile)) {
+        return JSON.parse(fs.readFileSync(this.messageIdFile, 'utf8'));
+      }
+    } catch (error) {
+      console.error('Erro ao carregar messageId:', error);
+    }
+    return null;
+  }
 
-      const message = await channel.messages.fetch(guildData.painel.messageId).catch(() => null);
-      if (!message) return;
+  // Registrar participação em evento
+  static registerEventParticipation(userId, eventId, eventName) {
+    if (!this.stats.has(userId)) {
+      this.stats.set(userId, { events: [], totalParticipated: 0 });
+    }
 
-      // Calcular estatísticas
-      const historico = guildData.historico || [];
-      const totalEventos = historico.length;
-      const totalParticipacoes = historico.reduce((acc, evt) => acc + (evt.participantes?.length || 0), 0);
-      
-      // Participantes únicos
-      const participantesUnicos = new Set();
-      historico.forEach(evt => {
-        evt.participantes?.forEach(p => participantesUnicos.add(p));
+    const userStats = this.stats.get(userId);
+
+    // Verificar se já registrou este evento específico
+    const alreadyRegistered = userStats.events.some(e => e.eventId === eventId);
+    if (alreadyRegistered) return;
+
+    userStats.events.push({
+      eventId,
+      date: new Date().toISOString(),
+      name: eventName
+    });
+    userStats.totalParticipated = userStats.events.length;
+
+    this.saveStats();
+  }
+
+  // Calcular quantidade de eventos no período
+  static getEventsInPeriod(userId, period) {
+    const userStats = this.stats.get(userId);
+    if (!userStats) return { participated: 0, total: this.getTotalEvents() };
+
+    const now = Date.now();
+    const periods = {
+      '7d': 7 * 24 * 60 * 60 * 1000,
+      '2w': 14 * 24 * 60 * 60 * 1000,
+      '1m': 30 * 24 * 60 * 60 * 1000,
+      '3m': 90 * 24 * 60 * 60 * 1000,
+      '8m': 240 * 24 * 60 * 60 * 1000,
+      '1y': 365 * 24 * 60 * 60 * 1000,
+      'total': Infinity
+    };
+
+    const timeLimit = periods[period] || Infinity;
+
+    const participatedInPeriod = userStats.events.filter(e => {
+      const eventDate = new Date(e.date).getTime();
+      return (now - eventDate) <= timeLimit;
+    }).length;
+
+    // Total de eventos no período (todos os eventos criados no período)
+    const totalInPeriod = this.getTotalEventsInPeriod(timeLimit);
+
+    return {
+      participated: participatedInPeriod,
+      total: totalInPeriod === 0 ? participatedInPeriod : totalInPeriod // Evitar divisão por zero
+    };
+  }
+
+  static getTotalEvents() {
+    // Contar todos os eventos únicos já registrados
+    const allEventIds = new Set();
+    for (const userData of this.stats.values()) {
+      userData.events.forEach(e => allEventIds.add(e.eventId));
+    }
+    return allEventIds.size;
+  }
+
+  static getTotalEventsInPeriod(timeLimit) {
+    const now = Date.now();
+    const allEventIds = new Set();
+
+    for (const userData of this.stats.values()) {
+      userData.events.forEach(e => {
+        const eventDate = new Date(e.date).getTime();
+        if ((now - eventDate) <= timeLimit) {
+          allEventIds.add(e.eventId);
+        }
+      });
+    }
+    return allEventIds.size;
+  }
+
+  static createFilterSelectMenu() {
+    const options = [
+      new StringSelectMenuOptionBuilder().setLabel('Últimos 7 dias').setValue('7d').setDescription('Eventos dos últimos 7 dias').setEmoji('📅'),
+      new StringSelectMenuOptionBuilder().setLabel('Últimas 2 semanas').setValue('2w').setDescription('Eventos das últimas 2 semanas').setEmoji('📆'),
+      new StringSelectMenuOptionBuilder().setLabel('Último mês').setValue('1m').setDescription('Eventos do último mês').setEmoji('🗓️'),
+      new StringSelectMenuOptionBuilder().setLabel('Últimos 3 meses').setValue('3m').setDescription('Eventos dos últimos 3 meses').setEmoji('📊'),
+      new StringSelectMenuOptionBuilder().setLabel('Últimos 8 meses').setValue('8m').setDescription('Eventos dos últimos 8 meses').setEmoji('📈'),
+      new StringSelectMenuOptionBuilder().setLabel('Último ano').setValue('1y').setDescription('Eventos do último ano').setEmoji('📉'),
+      new StringSelectMenuOptionBuilder().setLabel('Total (Todos)').setValue('total').setDescription('Todos os eventos').setEmoji('🔢'),
+    ];
+
+    return new StringSelectMenuBuilder()
+      .setCustomId('event_stats_filter')
+      .setPlaceholder('Selecione o período para filtrar...')
+      .addOptions(options);
+  }
+
+  static async generateStatsEmbed(guild, filter = 'total') {
+    this.currentFilter = filter;
+
+    const filterNames = {
+      '7d': 'Últimos 7 dias',
+      '2w': 'Últimas 2 semanas',
+      '1m': 'Último mês',
+      '3m': 'Últimos 3 meses',
+      '8m': 'Últimos 8 meses',
+      '1y': 'Último ano',
+      'total': 'Total Geral'
+    };
+
+    const embed = new EmbedBuilder()
+      .setTitle('📊 **PAINEL DE EVENTOS - ESTATÍSTICAS**')
+      .setDescription(`> Participação dos membros em eventos da guilda\n> **Período:** ${filterNames[filter]}\n\u200B`)
+      .setColor(0x3498DB)
+      .setThumbnail(guild.iconURL({ dynamic: true }))
+      .setFooter({ text: 'Atualizado automaticamente • Use o menu abaixo para filtrar' })
+      .setTimestamp();
+
+    // Buscar todos os membros com cargos relevantes (NOTAG, Member Evento, Staff, etc.)
+    const relevantRoles = ['NOTAG', 'Member Evento', 'Staff', 'ADM', 'Caller', 'ALIANÇA'];
+    const trackedMembers = [];
+
+    for (const member of guild.members.cache.values()) {
+      const hasRelevantRole = member.roles.cache.some(r => relevantRoles.includes(r.name));
+      if (hasRelevantRole && !member.user.bot) {
+        const stats = this.getEventsInPeriod(member.id, filter);
+        trackedMembers.push({
+          member,
+          participated: stats.participated,
+          total: stats.total,
+          percentage: stats.total > 0 ? Math.round((stats.participated / stats.total) * 100) : 0
+        });
+      }
+    }
+
+    // Ordenar por quantidade de eventos participados (decrescente)
+    trackedMembers.sort((a, b) => b.participated - a.participated);
+
+    if (trackedMembers.length === 0) {
+      embed.addFields({ name: '👥 Membros', value: '*Nenhum membro registrado ainda*', inline: false });
+    } else {
+      // Dividir em grupos de 20 para não ultrapassar limite de caracteres
+      let currentField = '';
+      let fieldCount = 0;
+
+      for (let i = 0; i < trackedMembers.length; i++) {
+        const tm = trackedMembers[i];
+        const line = `${i + 1}. ${tm.member.displayName}: **${tm.participated}/${tm.total}** (${tm.percentage}%)\n`;
+
+        if ((currentField + line).length > 1024) {
+          embed.addFields({
+            name: fieldCount === 0 ? `👥 Membros (${trackedMembers.length})` : '\u200B',
+            value: currentField || '*Dados...*',
+            inline: false
+          });
+          currentField = line;
+          fieldCount++;
+        } else {
+          currentField += line;
+        }
+      }
+
+      if (currentField) {
+        embed.addFields({
+          name: fieldCount === 0 ? `👥 Membros (${trackedMembers.length})` : '\u200B',
+          value: currentField,
+          inline: false
+        });
+      }
+    }
+
+    // Estatísticas gerais
+    const totalEvents = this.getTotalEventsInPeriod(
+      filter === 'total' ? Infinity : {
+        '7d': 7 * 24 * 60 * 60 * 1000,
+        '2w': 14 * 24 * 60 * 60 * 1000,
+        '1m': 30 * 24 * 60 * 60 * 1000,
+        '3m': 90 * 24 * 60 * 60 * 1000,
+        '8m': 240 * 24 * 60 * 60 * 1000,
+        '1y': 365 * 24 * 60 * 60 * 1000
+      }[filter]
+    );
+
+    embed.addFields(
+      { name: '\u200B', value: '\u200B', inline: false },
+      { name: '📈 Estatísticas Gerais', value: `Total de eventos: **${totalEvents}**\nMembros ativos: **${trackedMembers.filter(m => m.participated > 0).length}**`, inline: false }
+    );
+
+    return embed;
+  }
+
+  static async initializePanel(channel) {
+    // 🆕 CORREÇÃO: Verificar se canal existe antes de prosseguir
+    if (!channel) {
+      console.error('❌ Canal não fornecido para initializePanel');
+      return;
+    }
+
+    try {
+      const embed = await this.generateStatsEmbed(channel.guild, 'total');
+      const row = new ActionRowBuilder().addComponents(this.createFilterSelectMenu());
+
+      const msg = await channel.send({
+        content: '📊 **Painel de Estatísticas de Eventos**\n*Selecione um período abaixo para filtrar os dados:*',
+        embeds: [embed],
+        components: [row]
       });
 
-      const embed = new EmbedBuilder()
-        .setTitle('📊 **ESTATÍSTICAS DE EVENTOS**')
-        .setDescription(`Estatísticas atualizadas em <t:${Math.floor(Date.now() / 1000)}:R>`)
-        .setColor(0x3498DB)
-        .addFields(
-          { name: '🔥 Eventos Realizados', value: totalEventos.toString(), inline: true },
-          { name: '👥 Total de Participações', value: totalParticipacoes.toString(), inline: true },
-          { name: '🎮 Participantes Únicos', value: participantesUnicos.size.toString(), inline: true }
-        )
-        .setTimestamp();
+      this.saveMessageId(channel.id, msg.id);
+      console.log(`✅ Painel de eventos inicializado em ${channel.name}`);
+      return msg;
+    } catch (error) {
+      console.error('Erro ao inicializar painel:', error);
+    }
+  }
 
-      const buttons = new ActionRowBuilder()
-        .addComponents(
-          new ButtonBuilder()
-            .setCustomId('stats_filter_7d')
-            .setLabel('7 dias')
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId('stats_filter_2w')
-            .setLabel('2 semanas')
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId('stats_filter_1m')
-            .setLabel('1 mês')
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId('stats_filter_all')
-            .setLabel('Tudo')
-            .setStyle(ButtonStyle.Secondary)
-        );
+  static async updatePanel(guild, filter = null) {
+    try {
+      const saved = this.loadMessageId();
+      if (!saved) return;
 
-      await message.edit({ embeds: [embed], components: [buttons] });
-      
+      if (filter) this.currentFilter = filter;
+
+      const channel = await guild.channels.fetch(saved.channelId).catch(() => null);
+      if (!channel) return;
+
+      const message = await channel.messages.fetch(saved.messageId).catch(() => null);
+      if (!message) {
+        // Se mensagem foi deletada, recriar
+        await this.initializePanel(channel);
+        return;
+      }
+
+      const embed = await this.generateStatsEmbed(guild, this.currentFilter);
+      const row = new ActionRowBuilder().addComponents(this.createFilterSelectMenu());
+
+      await message.edit({ embeds: [embed], components: [row] });
+      this.saveMessageId(saved.channelId, saved.messageId, this.currentFilter);
     } catch (error) {
       console.error('Erro ao atualizar painel:', error);
     }
   }
 
   static async handleFilterChange(interaction) {
-    const customId = interaction.customId;
-    const dias = customId === 'stats_filter_7d' ? 7 : 
-                 customId === 'stats_filter_2w' ? 14 : 
-                 customId === 'stats_filter_1m' ? 30 : null;
+    const filter = interaction.values[0];
+    await this.updatePanel(interaction.guild, filter);
 
     await interaction.reply({
-      content: `Filtro aplicado: ${dias ? `Últimos ${dias} dias` : 'Todos os eventos'}`,
+      content: `✅ Filtro atualizado para: **${{
+        '7d': 'Últimos 7 dias',
+        '2w': 'Últimas 2 semanas',
+        '1m': 'Último mês',
+        '3m': 'Últimos 3 meses',
+        '8m': 'Últimos 8 meses',
+        '1y': 'Último ano',
+        'total': 'Total Geral'
+      }[filter]}**`,
       ephemeral: true
     });
-  }
-
-  static async registerEventParticipation(userId, eventId, eventName) {
-    // Método para registrar participação (chamado quando usuário entra em evento)
-    // Pode ser expandido para sistema de XP/ranking
-    console.log(`Participação registrada: ${userId} no evento ${eventName} (${eventId})`);
-  }
-
-  static getEventStats(guildId, eventId) {
-    const arquivo = path.join(__dirname, '..', 'data', 'eventStats.json');
-    
-    try {
-      if (fs.existsSync(arquivo)) {
-        const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-        const evento = dados[guildId]?.historico?.find(e => e.id === eventId);
-        if (evento) {
-          return {
-            ...evento,
-            participacaoIndividual: new Map(Object.entries(evento.participacaoIndividual || {}))
-          };
-        }
-      }
-    } catch (error) {
-      console.error('Erro ao buscar stats:', error);
-    }
-    
-    return null;
-  }
-
-  static getAllStats(guildId, filtroDias = null) {
-    const arquivo = path.join(__dirname, '..', 'data', 'eventStats.json');
-    
-    try {
-      if (fs.existsSync(arquivo)) {
-        const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-        let historico = dados[guildId]?.historico || [];
-        
-        if (filtroDias) {
-          const limite = new Date();
-          limite.setDate(limite.getDate() - filtroDias);
-          historico = historico.filter(e => new Date(e.dataRegistro) >= limite);
-        }
-        
-        return historico;
-      }
-    } catch (error) {
-      console.error('Erro ao buscar stats:', error);
-    }
-    
-    return [];
   }
 }
 
