@@ -20,7 +20,7 @@ class EventHandler {
 
   static createCustomEventModal() {
     const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
-    
+
     const modal = new ModalBuilder()
       .setCustomId('modal_evento_custom')
       .setTitle('📝 Criar Evento Personalizado');
@@ -67,7 +67,7 @@ class EventHandler {
 
   static createPresetEventModal(tipo) {
     const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
-    
+
     const modal = new ModalBuilder()
       .setCustomId(`modal_evento_${tipo}`)
       .setTitle(`📝 ${this.getEventTypeName(tipo)}`);
@@ -113,15 +113,16 @@ class EventHandler {
 
   static async createEvent(interaction, eventData) {
     const guild = interaction.guild;
-    const categoriaEventos = guild.channels.cache.find(c => c.name === '🔥 EVENTOS ATIVOS' && c.type === 4);
+    // 🆕 CORREÇÃO: Emoji alterado de '🔥' para '⚔️' para corresponder ao setupManager.js
+    const categoriaEventos = guild.channels.cache.find(c => c.name === '⚔️ EVENTOS ATIVOS' && c.type === 4);
     const categoriaBanco = guild.channels.cache.find(c => c.name === 'banco da guilda' && c.type === 4);
-    
+
     if (!categoriaEventos) {
-      throw new Error('Categoria 🔥 EVENTOS ATIVOS não encontrada! Execute /instalar primeiro.');
+      throw new Error('Categoria ⚔️ EVENTOS ATIVOS não encontrada! Execute /instalar primeiro.');
     }
 
     const eventId = `evt_${Date.now()}_${interaction.user.id}`;
-    
+
     // Criar canal de texto
     const textChannel = await guild.channels.create({
       name: `📋-${eventData.nome.toLowerCase().replace(/\s+/g, '-')}`,
@@ -167,10 +168,14 @@ class EventHandler {
     const embed = this.createEventEmbed(evento, interaction.member);
     const buttons = this.createEventButtons(eventId, false);
 
+    // 🆕 CORREÇÃO: Removido [] em volta de buttons (já é um array)
+    const membroRole = guild.roles.cache.find(r => r.name === 'Membro');
+    const mentionText = membroRole ? `<@&${membroRole.id}>` : '@everyone';
+
     await textChannel.send({
-      content: `📢 <@&${guild.roles.cache.find(r => r.name === 'Membro')?.id}> Novo evento criado!`,
+      content: `📢 ${mentionText} Novo evento criado!`,
       embeds: [embed],
-      components: [buttons]
+      components: buttons
     });
 
     return { textChannel, voiceChannel, eventId };
@@ -284,11 +289,11 @@ class EventHandler {
 
     if (!evento.participantes.includes(interaction.user.id)) {
       evento.participantes.push(interaction.user.id);
-      
+
       if (!evento.participacaoIndividual) {
         evento.participacaoIndividual = new Map();
       }
-      
+
       evento.participacaoIndividual.set(interaction.user.id, {
         userId: interaction.user.id,
         nickname: interaction.member.nickname || interaction.user.username,
@@ -299,7 +304,7 @@ class EventHandler {
     }
 
     const participacao = evento.participacaoIndividual.get(interaction.user.id);
-    
+
     if (evento.status === 'em_andamento' && !participacao.entradaAtual) {
       participacao.entradaAtual = Date.now();
     }
@@ -327,17 +332,17 @@ class EventHandler {
     }
 
     const participacao = evento.participacaoIndividual?.get(interaction.user.id);
-    
+
     if (participacao && participacao.entradaAtual) {
       const agora = Date.now();
       const tempoSessao = agora - participacao.entradaAtual;
-      
+
       participacao.tempos.push({
         entrada: participacao.entradaAtual,
         saida: agora,
         duracao: tempoSessao
       });
-      
+
       participacao.tempoTotal += tempoSessao;
       participacao.entradaAtual = null;
     }
@@ -356,9 +361,9 @@ class EventHandler {
     const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
 
     if (!isADM && !isCaller && evento.criadorId !== interaction.user.id) {
-      return interaction.reply({ 
-        content: '❌ Apenas ADMs, Callers ou o criador podem iniciar!', 
-        ephemeral: true 
+      return interaction.reply({
+        content: '❌ Apenas ADMs, Callers ou o criador podem iniciar!',
+        ephemeral: true
       });
     }
 
@@ -374,7 +379,7 @@ class EventHandler {
 
     for (const userId of evento.participantes) {
       let participacao = evento.participacaoIndividual.get(userId);
-      
+
       if (!participacao) {
         const membro = await interaction.guild.members.fetch(userId).catch(() => null);
         participacao = {
@@ -401,10 +406,10 @@ class EventHandler {
         try {
           await membro.voice.setChannel(evento.voiceChannelId);
           movidos++;
-          
+
           const part = evento.participacaoIndividual.get(userId);
           if (part) part.entradaAtual = Date.now();
-          
+
         } catch (error) {
           naoMovidos++;
         }
@@ -412,11 +417,11 @@ class EventHandler {
     }
 
     await this.atualizarEmbedEvento(interaction, evento);
-    
+
     let msg = '✅ Evento iniciado!';
     if (movidos > 0) msg += `\n🔄 ${movidos} participante(s) movido(s) para o canal.`;
     if (naoMovidos > 0) msg += `\n⚠️ ${naoMovidos} não puderam ser movidos (verifiquem se estão em canal de voz).`;
-    
+
     await interaction.reply({ content: msg, ephemeral: true });
   }
 
@@ -434,7 +439,7 @@ class EventHandler {
     }
 
     evento.status = 'pausado';
-    
+
     if (evento.participacaoIndividual) {
       const agora = Date.now();
       for (const participacao of evento.participacaoIndividual.values()) {
@@ -470,9 +475,9 @@ class EventHandler {
 
     evento.trancado = !evento.trancado;
     await this.atualizarEmbedEvento(interaction, evento);
-    await interaction.reply({ 
-      content: evento.trancado ? '🔒 Evento trancado!' : '🔓 Evento destrancado!', 
-      ephemeral: true 
+    await interaction.reply({
+      content: evento.trancado ? '🔒 Evento trancado!' : '🔓 Evento destrancado!',
+      ephemeral: true
     });
   }
 
@@ -511,9 +516,9 @@ class EventHandler {
     const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
 
     if (!isADM && !isCaller && evento.criadorId !== interaction.user.id) {
-      return interaction.reply({ 
-        content: '❌ Apenas ADMs, Callers ou o criador podem finalizar!', 
-        ephemeral: true 
+      return interaction.reply({
+        content: '❌ Apenas ADMs, Callers ou o criador podem finalizar!',
+        ephemeral: true
       });
     }
 
@@ -526,9 +531,9 @@ class EventHandler {
     );
 
     if (!canalAguardando) {
-      return interaction.reply({ 
-        content: '❌ Canal "🔊╠Aguardando-Evento" não encontrado na categoria "banco da guilda"!', 
-        ephemeral: true 
+      return interaction.reply({
+        content: '❌ Canal "🔊╠Aguardando-Evento" não encontrado na categoria "banco da guilda"!',
+        ephemeral: true
       });
     }
 
@@ -549,7 +554,7 @@ class EventHandler {
     }
 
     const voiceChannel = interaction.guild.channels.cache.get(evento.voiceChannelId);
-    
+
     if (voiceChannel) {
       for (const [memberId, member] of voiceChannel.members) {
         try {
@@ -602,9 +607,9 @@ class EventHandler {
 
     EventActions.activeEvents.delete(eventId);
 
-    await interaction.reply({ 
-      content: `✅ Evento **${evento.nome}** finalizado!\n📁 Canal de loot criado: ${textChannel}\n🔊 Participantes movidos para Aguardando-Evento.`, 
-      ephemeral: true 
+    await interaction.reply({
+      content: `✅ Evento **${evento.nome}** finalizado!\n📁 Canal de loot criado: ${textChannel}\n🔊 Participantes movidos para Aguardando-Evento.`,
+      ephemeral: true
     });
   }
 }
