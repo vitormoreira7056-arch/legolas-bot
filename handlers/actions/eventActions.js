@@ -1,4 +1,4 @@
-const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits, ButtonBuilder, ButtonStyle } = require('discord.js');
 const ConfigHandler = require('../configHandler');
 const BankCore = require('../bank/bankCore');
 const db = require('../../utils/database');
@@ -186,7 +186,7 @@ class EventActions {
     // 🆕 CORREÇÃO: Mover todos os participantes para o canal de voz automaticamente
     let movidos = 0;
     let naoMovidos = [];
-    
+
     try {
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId);
       if (voiceChannel) {
@@ -227,7 +227,7 @@ class EventActions {
     // 🆕 CORREÇÃO: Montar mensagem de resposta detalhada
     let msgResposta = `▶️ Evento **${event.nome}** iniciado!\n\n`;
     msgResposta += `✅ **${movidos}** participante(s) movido(s) para o canal de voz.\n`;
-    
+
     if (naoMovidos.length > 0) {
       msgResposta += `⚠️ **${naoMovidos.length}** não movido(s) (não estavam em canal de voz): ${naoMovidos.join(', ')}\n`;
       msgResposta += `🔊 Entre em qualquer canal de voz para ser movido automaticamente.`;
@@ -535,18 +535,18 @@ class EventActions {
       }
     }
 
-    // 🆕 CORREÇÃO: Buscar canal "aguardando-evento" para mover participantes
+    // 🆕 CORREÇÃO: Buscar canal "aguardando-evento" na categoria "banco da guilda"
     const canalAguardando = interaction.guild.channels.cache.find(
       c => c.type === ChannelType.GuildVoice && c.name === 'aguardando-evento'
     );
 
-    // 🆕 CORREÇÃO: Buscar canais e categoria de eventos encerrados
+    // 🆕 CORREÇÃO: Buscar categoria de eventos encerrados
     const categoriaEncerrados = interaction.guild.channels.cache.find(
       c => c.type === ChannelType.GuildCategory && c.name === '📁 EVENTOS ENCERRADOS'
     );
 
-    const textChannel = interaction.guild.channels.cache.get(event.textChannelId);
-    const voiceChannel = interaction.guild.channels.cache.get(event.voiceChannelId);
+    // Buscar o canal de voz do evento
+    const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId).catch(() => null);
 
     // 🆕 CORREÇÃO: Mover participantes do canal de voz para "aguardando-evento"
     if (voiceChannel && canalAguardando) {
@@ -564,28 +564,77 @@ class EventActions {
       }
     }
 
-    // 🆕 CORREÇÃO: Mover APENAS o canal de texto para EVENTOS ENCERRADOS
-    if (textChannel && categoriaEncerrados) {
+    // 🆕 CORREÇÃO: Converter canal de voz em canal de texto e mover para encerrados
+    let canalEncerradoId = null;
+    if (voiceChannel && categoriaEncerrados) {
       try {
-        await textChannel.setParent(categoriaEncerrados.id, { lockPermissions: false });
-        // Renomear para indicar que está encerrado
-        await textChannel.setName(`📁-${event.nome.toLowerCase().replace(/\s+/g, '-')}`);
-        // Trancar o canal (somente visualização)
-        await textChannel.permissionOverwrites.edit(interaction.guild.id, {
-          SendMessages: false,
-          AddReactions: false
+        // Criar novo canal de texto com as mesmas propriedades do canal de voz
+        const textChannel = await interaction.guild.channels.create({
+          name: `📁-${event.nome.toLowerCase().replace(/\s+/g, '-')}`,
+          type: ChannelType.GuildText,
+          parent: categoriaEncerrados.id,
+          permissionOverwrites: [
+            {
+              id: interaction.guild.id,
+              allow: [PermissionFlagsBits.ViewChannel],
+              deny: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.AddReactions]
+            }
+          ]
         });
-      } catch (error) {
-        console.error('Erro ao mover canal de texto:', error);
-      }
-    }
 
-    // 🆕 CORREÇÃO: DELETAR o canal de voz (NÃO mover)
-    if (voiceChannel) {
-      try {
-        await voiceChannel.delete('Evento finalizado');
+        canalEncerradoId = textChannel.id;
+
+        // Criar embed de evento encerrado com informações do lootsplit
+        const embedEncerrado = new EmbedBuilder()
+          .setTitle(`🏆 **${event.nome}** - EVENTO ENCERRADO`)
+          .setDescription(
+            `> Evento finalizado por ${interaction.user}\n\n` +
+            `**📊 Informações do Evento:**\n` +
+            `• **Tipo:** ${event.tipo}\n` +
+            `• **Iniciado em:** <t:${Math.floor(event.presenceData.startTime / 1000)}:F>\n` +
+            `• **Finalizado em:** <t:${Math.floor(Date.now() / 1000)}:F>\n` +
+            `• **Participantes:** ${event.participants.length}\n\n` +
+            `**💰 Loot Split:**\n` +
+            `Use os botões abaixo para simular o split do loot.`
+          )
+          .setColor(0x57F287)
+          .setTimestamp();
+
+        // Criar botões para lootsplit
+        const botoesLoot = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`loot_simular_${eventId}`)
+              .setLabel('💰 Simular Loot Split')
+              .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId(`loot_participacao_${eventId}`)
+              .setLabel('📊 Atualizar Participação')
+              .setStyle(ButtonStyle.Secondary)
+          );
+
+        await textChannel.send({
+          embeds: [embedEncerrado],
+          components: [botoesLoot]
+        });
+
+        // Salvar estatísticas antes de deletar o canal de voz
+        try {
+          await EventStatsHandler.saveEventStats(event, interaction.guild);
+        } catch (error) {
+          console.error('Erro ao salvar estatísticas:', error);
+        }
+
+        // Deletar o canal de voz antigo
+        await voiceChannel.delete('Evento finalizado - convertido para texto');
+
       } catch (error) {
-        console.error('Erro ao deletar canal de voz:', error);
+        console.error('Erro ao converter canal de voz para texto:', error);
+        await interaction.reply({
+          content: '❌ Erro ao arquivar evento!',
+          ephemeral: true
+        });
+        return;
       }
     }
 
@@ -596,7 +645,7 @@ class EventActions {
 
       const embed = new EmbedBuilder()
         .setTitle(`🏆 **${event.nome}** - FINALIZADO`)
-        .setDescription(`Evento finalizado por ${interaction.user}\n📁 Canal arquivado em <#${textChannel?.id || 'desconhecido'}>`)
+        .setDescription(`Evento finalizado por ${interaction.user}\n📁 Canal arquivado em <#${canalEncerradoId || 'desconhecido'}>`)
         .setColor(0x57F287)
         .setTimestamp();
 
@@ -609,7 +658,7 @@ class EventActions {
     EventActions.activeEvents.delete(eventId);
 
     await interaction.reply({
-      content: `✅ Evento **${event.nome}** finalizado!\n📁 Canal de texto arquivado.\n🔊 Canal de voz deletado.\n👥 Participantes movidos para aguardando-evento.`,
+      content: `✅ Evento **${event.nome}** finalizado!\n📁 Canal convertido para texto e arquivado.\n👥 Participantes movidos para aguardando-evento.\n💰 Painel de lootsplit criado.`,
       ephemeral: true
     });
   }
