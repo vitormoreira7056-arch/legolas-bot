@@ -5,6 +5,7 @@ const ConfigHandler = require('./configHandler');
 class LootSplitCore {
   static calcularDivisao(evento, valorTotal, ajustes = {}) {
     const config = ConfigHandler.getConfig(evento.guildId) || {};
+    // 🆕 CORREÇÃO: Usar taxaGuilda (nome correto)
     const taxaPercentual = config.taxaGuilda || 10;
     const valorTaxa = Math.floor(valorTotal * (taxaPercentual / 100));
     const valorLiquido = valorTotal - valorTaxa;
