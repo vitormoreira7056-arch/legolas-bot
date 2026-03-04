@@ -36,9 +36,10 @@ class Database {
     return user;
   }
 
-  // 🆕 NOVO: Sistema de XP
+  // 🆕 NOVO: Sistema de XP - CORRIGIDO
   addXP(userId, quantidade, motivo = 'Evento') {
     const user = this.getUser(userId);
+    const nivelAnterior = user.nivel; // Guardar nível antes de adicionar XP
     user.xp += quantidade;
 
     // Verificar level up
@@ -50,7 +51,8 @@ class Database {
     }
 
     this.updateUser(userId, user);
-    return { user, levelUp: user.nivel > this.getUser(userId).nivel };
+    // CORREÇÃO: Comparar com nível anterior guardado, não chamar getUser novamente
+    return { user, levelUp: user.nivel > nivelAnterior };
   }
 
   getPatente(nivel) {
@@ -184,8 +186,8 @@ class Database {
     user.saldo += valor;
     user.totalDepositado += valor;
 
-    this.addTransaction('deposito', userId, valor, { 
-      adminId, 
+    this.addTransaction('deposito', userId, valor, {
+      adminId,
       tipo: 'manual',
       motivo: motivo
     });
@@ -203,7 +205,7 @@ class Database {
       const user = this.getUser(userId);
       user.saldo += valorPorPessoa;
 
-      this.addTransaction('evento', userId, valorPorPessoa, { 
+      this.addTransaction('evento', userId, valorPorPessoa, {
         eventId: eventId,
         tipo: 'lootsplit',
         taxaAplicada: taxaGuilda
