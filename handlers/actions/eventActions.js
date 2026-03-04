@@ -1,4 +1,4 @@
-const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
 const ConfigHandler = require('../configHandler');
 const BankCore = require('../bank/bankCore');
 const db = require('../../utils/database');
@@ -183,9 +183,7 @@ class EventActions {
       };
     }
 
-    let movidos = 0;
-    let naoMovidos = [];
-
+    // Mover todos os participantes para o canal de voz automaticamente
     try {
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId);
       if (voiceChannel) {
@@ -194,14 +192,9 @@ class EventActions {
             const member = await interaction.guild.members.fetch(userId);
             if (member && member.voice.channel) {
               await member.voice.setChannel(voiceChannel);
-              movidos++;
-            } else if (member && !member.voice.channel) {
-              naoMovidos.push(member.user.username);
             }
           } catch (moveError) {
             console.error(`Não foi possível mover ${userId}:`, moveError.message);
-            const member = await interaction.guild.members.fetch(userId).catch(() => null);
-            if (member) naoMovidos.push(member.user.username);
           }
         }
       }
@@ -221,16 +214,8 @@ class EventActions {
       console.error('Erro ao atualizar mensagem:', error);
     }
 
-    let msgResposta = `▶️ Evento **${event.nome}** iniciado!\n\n`;
-    msgResposta += `✅ **${movidos}** participante(s) movido(s) para o canal de voz.\n`;
-    
-    if (naoMovidos.length > 0) {
-      msgResposta += `⚠️ **${naoMovidos.length}** não movido(s) (não estavam em canal de voz): ${naoMovidos.join(', ')}\n`;
-      msgResposta += `🔊 Entre em qualquer canal de voz para ser movido automaticamente.`;
-    }
-
     await interaction.reply({
-      content: msgResposta,
+      content: `▶️ Evento **${event.nome}** iniciado! Todos os participantes foram movidos para o canal de voz!`,
       ephemeral: true
     });
   }
@@ -531,143 +516,94 @@ class EventActions {
       }
     }
 
-    // 🆕 CORREÇÃO: Buscar canal "🔊╠Aguardando-Evento" com nome EXATO como no setup
+    // Calcular duração total do evento
+    const duracaoTotal = event.presenceData.startTime ? 
+      event.presenceData.endTime - event.presenceData.startTime : 0;
+
+    // Mover participantes do canal de voz para Aguardando-Evento
     const canalAguardando = interaction.guild.channels.cache.find(
-      c => c.type === ChannelType.GuildVoice && c.name === '🔊╠Aguardando-Evento'
+      c => c.name.includes('Aguardando-Evento') && c.type === ChannelType.GuildVoice
     );
 
-    // Buscar categoria de eventos encerrados
-    const categoriaEncerrados = interaction.guild.channels.cache.find(
-      c => c.type === ChannelType.GuildCategory && c.name === '📁 EVENTOS ENCERRADOS'
-    );
-
-    // Buscar o canal de voz do evento
     const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId).catch(() => null);
-
-    console.log(`[FINALIZAR] Canal aguardando encontrado: ${canalAguardando ? canalAguardando.name : 'NÃO'}`);
-    console.log(`[FINALIZAR] Voice channel do evento: ${voiceChannel ? voiceChannel.name : 'NÃO'}`);
-
-    // Mover participantes do canal de voz para "🔊╠Aguardando-Evento"
-    let movidos = 0;
+    
     if (voiceChannel && canalAguardando) {
-      try {
-        // Fazer fetch do canal para garantir cache atualizado
-        const fetchedChannel = await interaction.guild.channels.fetch(voiceChannel.id);
-        const membrosNoCanal = fetchedChannel.members;
-        
-        console.log(`[FINALIZAR] Tentando mover ${membrosNoCanal.size} membros para 🔊╠Aguardando-Evento`);
-        
-        for (const [memberId, member] of membrosNoCanal) {
-          try {
-            if (member.voice.channel) {
-              await member.voice.setChannel(canalAguardando);
-              movidos++;
-              console.log(`[FINALIZAR] Movido: ${member.user.tag}`);
-            }
-          } catch (moveError) {
-            console.error(`[FINALIZAR] Erro ao mover ${memberId}:`, moveError.message);
-          }
+      for (const [memberId, member] of voiceChannel.members) {
+        try {
+          await member.voice.setChannel(canalAguardando.id);
+        } catch (error) {
+          console.log(`Não foi possível mover ${member.user.tag}:`, error.message);
         }
-      } catch (error) {
-        console.error('[FINALIZAR] Erro ao mover participantes:', error);
-      }
-    } else {
-      if (!canalAguardando) console.log('[FINALIZAR] ERRO: Canal 🔊╠Aguardando-Evento não encontrado!');
-      if (!voiceChannel) console.log('[FINALIZAR] ERRO: Voice channel do evento não encontrado!');
-    }
-
-    // Converter canal de voz em canal de texto e mover para encerrados
-    let canalEncerradoId = null;
-    if (voiceChannel && categoriaEncerrados) {
-      try {
-        // Criar novo canal de texto
-        const textChannel = await interaction.guild.channels.create({
-          name: `📁-${event.nome.toLowerCase().replace(/\s+/g, '-')}`,
-          type: ChannelType.GuildText,
-          parent: categoriaEncerrados.id,
-          permissionOverwrites: [
-            {
-              id: interaction.guild.id,
-              allow: [PermissionFlagsBits.ViewChannel],
-              deny: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.AddReactions]
-            }
-          ]
-        });
-
-        canalEncerradoId = textChannel.id;
-
-        // Criar embed de evento encerrado
-        const embedEncerrado = new EmbedBuilder()
-          .setTitle(`🏆 **${event.nome}** - EVENTO ENCERRADO`)
-          .setDescription(
-            `> Evento finalizado por ${interaction.user}\n\n` +
-            `**📊 Informações do Evento:**\n` +
-            `• **Tipo:** ${event.tipo}\n` +
-            `• **Participantes:** ${event.participants.length}\n` +
-            `• **Movidos para aguardando:** ${movidos}\n\n` +
-            `**💰 Loot Split:**\n` +
-            `Use os botões abaixo para simular o split do loot.`
-          )
-          .setColor(0x57F287)
-          .setTimestamp();
-
-        // Criar botões para lootsplit
-        const botoesLoot = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder()
-              .setCustomId(`loot_simular_${eventId}`)
-              .setLabel('💰 Simular Loot Split')
-              .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-              .setCustomId(`loot_participacao_${eventId}`)
-              .setLabel('📊 Atualizar Participação')
-              .setStyle(ButtonStyle.Secondary)
-          );
-
-        await textChannel.send({
-          embeds: [embedEncerrado],
-          components: [botoesLoot]
-        });
-
-        // Deletar o canal de voz antigo APÓS mover todos
-        await voiceChannel.delete('Evento finalizado - convertido para texto');
-
-      } catch (error) {
-        console.error('Erro ao converter canal:', error);
-        await interaction.reply({
-          content: '❌ Erro ao arquivar evento!',
-          ephemeral: true
-        });
-        return;
       }
     }
 
-    // Atualizar mensagem de participação
+    // Criar canal de texto na categoria de eventos encerrados
+    let categoriaEncerrados = interaction.guild.channels.cache.find(
+      c => c.name.includes('EVENTOS ENCERRADOS') && c.type === ChannelType.GuildCategory
+    );
+
+    let textChannel;
     try {
-      const channel = await interaction.guild.channels.fetch(event.participarChannelId);
-      const message = await channel.messages.fetch(event.participarMessageId);
+      textChannel = await interaction.guild.channels.create({
+        name: `💰-${event.nome}`,
+        type: ChannelType.GuildText,
+        parent: categoriaEncerrados ? categoriaEncerrados.id : null,
+        permissionOverwrites: [
+          {
+            id: interaction.guild.id,
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory],
+            deny: [PermissionFlagsBits.SendMessages]
+          }
+        ]
+      });
 
-      const embed = new EmbedBuilder()
-        .setTitle(`🏆 **${event.nome}** - FINALIZADO`)
-        .setDescription(`Evento finalizado por ${interaction.user}\n📁 Canal arquivado em <#${canalEncerradoId || 'desconhecido'}>\n👥 ${movidos} participantes movidos para 🔊╠Aguardando-Evento`)
-        .setColor(0x57F287)
-        .setTimestamp();
+      if (voiceChannel) {
+        await voiceChannel.delete('Evento finalizado').catch(console.error);
+      }
 
-      await message.edit({ embeds: [embed], components: [] });
     } catch (error) {
-      console.error('Erro ao atualizar mensagem:', error);
+      console.error('Erro ao criar canal:', error);
+      // Fallback: usar canal existente se houver erro
+      textChannel = await interaction.guild.channels.fetch(event.participarChannelId).catch(() => null);
     }
 
-    // Remover do mapa de eventos ativos
-    EventActions.activeEvents.delete(eventId);
+    // Atualizar dados do evento para o formato esperado pelo LootSplitUI
+    const eventoFormatado = {
+      ...event,
+      id: eventId,
+      participacaoIndividual: new Map(Object.entries(event.presenceData.participants).map(([userId, data]) => [
+        userId,
+        {
+          userId,
+          nickname: data.nickname || interaction.guild.members.cache.get(userId)?.nickname || 'Desconhecido',
+          tempoTotal: data.totalTime,
+          tempos: data.joinTime ? [{ entrada: data.joinTime, saida: event.presenceData.endTime, duracao: data.totalTime }] : []
+        }
+      ])),
+      guildId: interaction.guild.id,
+      textChannelId: textChannel ? textChannel.id : event.participarChannelId
+    };
+
+    // Criar painel de lootsplit
+    if (textChannel) {
+      const painelLoot = LootSplitUI.createFinishedEventPanel(eventoFormatado, duracaoTotal);
+      await textChannel.send(painelLoot);
+    }
+
+    // Salvar estatísticas
+    await EventStatsHandler.saveEventStats(eventoFormatado, interaction.guild);
+
+    // Remover do mapa de eventos ativos após 1 hora (para permitir consulta se necessário)
+    setTimeout(() => {
+      EventActions.activeEvents.delete(eventId);
+    }, 3600000);
 
     await interaction.reply({
-      content: `✅ Evento **${event.nome}** finalizado!\n📁 Canal convertido para texto.\n👥 **${movidos}** participantes movidos para 🔊╠Aguardando-Evento.\n💰 Painel de lootsplit criado.`,
+      content: `✅ Evento **${event.nome}** finalizado!\n📁 Canal de loot: ${textChannel || 'Não criado'}\n🔊 Participantes movidos para Aguardando-Evento.`,
       ephemeral: true
     });
   }
 
-  // Handlers adicionais para botões de loot
   static async handleSimulateLoot(interaction, eventId) {
     const modal = LootSplitUI.createSimulationModal(eventId);
     await interaction.showModal(modal);
@@ -713,7 +649,6 @@ class EventActions {
   }
 }
 
-// Map estático para armazenar eventos ativos
 EventActions.activeEvents = new Map();
 
 module.exports = EventActions;
