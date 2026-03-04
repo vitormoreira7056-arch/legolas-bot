@@ -25,17 +25,23 @@ class LootSplitHandler {
 
   static async processSimulation(interaction, eventId) {
     try {
+      console.log(`[LOOTSPLIT] Iniciando simulação para evento ${eventId}`);
+      
       const valorInput = interaction.fields.getTextInputValue('valor_total');
       const ajustesInput = interaction.fields.getTextInputValue('ajustes') || '';
 
+      // Remover tudo que não é número
       const valorTotal = parseInt(valorInput.replace(/\D/g, ''));
 
       if (isNaN(valorTotal) || valorTotal <= 0) {
+        console.log(`[LOOTSPLIT] Valor inválido: ${valorInput}`);
         return interaction.reply({
           content: '❌ Valor inválido! Digite um número maior que 0.',
           ephemeral: true
         });
       }
+
+      console.log(`[LOOTSPLIT] Valor total: ${valorTotal}`);
 
       const ajustes = {};
       if (ajustesInput) {
@@ -51,6 +57,7 @@ class LootSplitHandler {
       let evento = EventActions.activeEvents.get(eventId);
 
       if (!evento) {
+        console.log(`[LOOTSPLIT] Evento não encontrado no Map, tentando stats...`);
         const stats = EventStatsHandler.getEventStats(interaction.guildId, eventId);
         if (stats) {
           evento = {
@@ -61,17 +68,33 @@ class LootSplitHandler {
       }
 
       if (!evento) {
+        console.log(`[LOOTSPLIT] Evento ${eventId} não encontrado`);
         return interaction.reply({
           content: '❌ Evento não encontrado!',
           ephemeral: true
         });
       }
 
+      console.log(`[LOOTSPLIT] Evento encontrado: ${evento.nome}`);
+
+      // 🆕 CORREÇÃO: Verificar se LootSplitCore.calcularDivisao existe
+      if (!LootSplitCore || typeof LootSplitCore.calcularDivisao !== 'function') {
+        console.error('[LOOTSPLIT] LootSplitCore.calcularDivisao não encontrado!');
+        return interaction.reply({
+          content: '❌ Erro interno: Sistema de cálculo indisponível.',
+          ephemeral: true
+        });
+      }
+
       const resultado = LootSplitCore.calcularDivisao(evento, valorTotal, ajustes);
+      console.log(`[LOOTSPLIT] Cálculo realizado:`, resultado);
 
-      await LootSplitCore.salvarSimulacao(evento, resultado);
+      // Salvar simulação
+      if (LootSplitCore.salvarSimulacao) {
+        await LootSplitCore.salvarSimulacao(evento, resultado);
+      }
 
-      const embedResultado = LootSplitUI.createSimulationResultEmbed(evento, valorTotal, resultado.distribuicao);
+      const embedResultado = LootSplitUI.createSimulationResultEmbed(evento, valorTotal, resultado);
 
       const botoes = new ActionRowBuilder()
         .addComponents(
@@ -94,10 +117,12 @@ class LootSplitHandler {
         components: [botoes]
       });
 
+      console.log(`[LOOTSPLIT] Simulação concluída com sucesso`);
+
     } catch (error) {
-      console.error('Erro na simulação:', error);
+      console.error('[LOOTSPLIT] Erro na simulação:', error);
       await interaction.reply({
-        content: '❌ Erro ao processar simulação!',
+        content: `❌ Erro ao processar simulação: ${error.message}`,
         ephemeral: true
       });
     }
@@ -200,10 +225,10 @@ class LootSplitHandler {
       await canalLoot.setName(`📁-${evento.nome}`);
       await canalLoot.send({
         embeds: [{
-          setTitle: '✅ Evento Arquivado',
-          setDescription: `Evento **${evento.nome}** foi arquivado e pagamentos processados.`,
-          setColor: 0x57F287,
-          setTimestamp: new Date()
+          title: '✅ Evento Arquivado',
+          description: `Evento **${evento.nome}** foi arquivado e pagamentos processados.`,
+          color: 0x57F287,
+          timestamp: new Date()
         }]
       });
     }
