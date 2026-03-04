@@ -1,4 +1,4 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const LootSplitCore = require('./lootSplitCore');
 const LootSplitUI = require('./lootSplitUI');
 const EventActions = require('./actions/eventActions');
@@ -26,13 +26,11 @@ class LootSplitHandler {
   static async processSimulation(interaction, eventId) {
     try {
       console.log(`[LOOTSPLIT] Iniciando simulação para evento ${eventId}`);
-      
+
       const valorInput = interaction.fields.getTextInputValue('valor_total');
-      // 🆕 NOVO: Ler valor do reparo
       const reparoInput = interaction.fields.getTextInputValue('valor_reparo') || '0';
       const ajustesInput = interaction.fields.getTextInputValue('ajustes') || '';
 
-      // Remover tudo que não é número
       const valorTotal = parseInt(valorInput.replace(/\D/g, ''));
       const valorReparo = parseInt(reparoInput.replace(/\D/g, '')) || 0;
 
@@ -44,7 +42,6 @@ class LootSplitHandler {
         });
       }
 
-      // Validar que reparo não é maior que o loot
       if (valorReparo > valorTotal) {
         return interaction.reply({
           content: '❌ O valor do reparo não pode ser maior que o valor total do loot!',
@@ -96,16 +93,13 @@ class LootSplitHandler {
         });
       }
 
-      // 🆕 NOVO: Calcular com reparo - subtrair reparo do valor total antes de dividir
       const resultado = LootSplitCore.calcularDivisao(evento, valorTotal, valorReparo, ajustes);
       console.log(`[LOOTSPLIT] Cálculo realizado:`, resultado);
 
-      // Salvar simulação incluindo reparo
       if (LootSplitCore.salvarSimulacao) {
         await LootSplitCore.salvarSimulacao(evento, resultado, valorReparo);
       }
 
-      // 🆕 ATUALIZADO: Passar valor do reparo para o embed
       const embedResultado = LootSplitUI.createSimulationResultEmbed(evento, valorTotal, valorReparo, resultado);
 
       const botoes = new ActionRowBuilder()
@@ -150,8 +144,8 @@ class LootSplitHandler {
       } catch {
         const linhas = dadosInput.split('\n');
         for (const linha of linhas) {
-          const match = linha.match(/<@!?(\d+)>:(\d{2}):(\d{2}):(\d{2})/) ||
-            linha.match(/(\d{17,19}):(\d{2}):(\d{2}):(\d{2})/);
+          const match = linha.match(/<@!?(\d+)>:?(\d{2}):(\d{2}):(\d{2})/) ||
+            linha.match(/(\d{17,19}):?(\d{2}):(\d{2}):(\d{2})/);
           if (match) {
             const horas = parseInt(match[2]) * 60 * 60 * 1000;
             const minutos = parseInt(match[3]) * 60 * 1000;
@@ -229,24 +223,41 @@ class LootSplitHandler {
     const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
 
     if (simulacao && !simulacao.finalizado) {
-      await LootSplitCore.finalizarSplit(evento, simulacao.resultado, interaction);
+      await interaction.reply({
+        content: '⚠️ Existe uma simulação pendente para este evento. Finalize ou cancele antes de arquivar.',
+        ephemeral: true
+      });
+      return;
+    }
+
+    if (simulacao && !simulacao.pago) {
+      await interaction.reply({
+        content: '⚠️ O split deste evento ainda não foi pago aos participantes!',
+        ephemeral: true
+      });
+      return;
     }
 
     const canalLoot = interaction.channel;
     if (canalLoot) {
-      await canalLoot.setName(`📁-${evento.nome}`);
-      await canalLoot.send({
-        embeds: [{
-          title: '✅ Evento Arquivado',
-          description: `Evento **${evento.nome}** foi arquivado e pagamentos processados.`,
-          color: 0x57F287,
-          timestamp: new Date()
-        }]
-      });
+      await canalLoot.setName(`📁-${evento.nome.toLowerCase().replace(/\s+/g, '-')}`);
+      
+      const embedArquivo = new EmbedBuilder()
+        .setTitle('✅ Evento Arquivado')
+        .setDescription(`Evento **${evento.nome}** foi arquivado e todos os pagamentos foram processados.`)
+        .setColor(0x57F287)
+        .addFields(
+          { name: '💰 Total Distribuído', value: `🪙 ${simulacao?.resultado?.valorDistribuir?.toLocaleString() || 0}`, inline: true },
+          { name: '💸 Taxa Guilda', value: `🪙 ${simulacao?.resultado?.taxa?.toLocaleString() || 0}`, inline: true },
+          { name: '👥 Participantes', value: `${Object.keys(simulacao?.resultado?.distribuicao || {}).length}`, inline: true }
+        )
+        .setTimestamp();
+
+      await canalLoot.send({ embeds: [embedArquivo] });
     }
 
     await interaction.reply({
-      content: '✅ Evento arquivado e taxas depositadas no banco da guilda!',
+      content: '✅ Evento arquivado com sucesso!',
       ephemeral: true
     });
   }
@@ -290,6 +301,13 @@ class LootSplitHandler {
       });
     }
 
+    if (simulacao.pago) {
+      return interaction.reply({
+        content: '❌ Este split já foi pago anteriormente!',
+        ephemeral: true
+      });
+    }
+
     if (simulacao.finalizado) {
       return interaction.reply({
         content: '❌ Este split já foi finalizado!',
@@ -297,12 +315,83 @@ class LootSplitHandler {
       });
     }
 
-    await LootSplitCore.finalizarSplit(evento, simulacao.resultado, interaction);
+    try {
+      console.log(`[LOOTSPLIT] Confirmando pagamento para evento ${eventId}`);
+      const resultado = await LootSplitCore.finalizarSplit(evento, simulacao.resultado, interaction);
+      
+      if (resultado.jaPago) {
+        return interaction.reply({
+          content: '❌ Este split já foi pago anteriormente!',
+          ephemeral: true
+        });
+      }
 
-    await interaction.update({
-      content: `✅ **Lootsplit confirmado e pagamentos realizados!**\n💰 Total distribuído: 🪙 ${simulacao.resultado.valorDistribuir.toLocaleString()}\n💸 Taxa guilda: 🪙 ${simulacao.resultado.taxa.toLocaleString()}${simulacao.valorReparo ? `\n🔧 Reparo: 🪙 ${simulacao.valorReparo.toLocaleString()}` : ''}`,
-      components: []
-    });
+      if (!resultado.sucesso) {
+        throw new Error('Falha ao processar pagamentos');
+      }
+
+      // Criar embed de confirmação
+      const embedConfirmacao = new EmbedBuilder()
+        .setTitle('✅ Lootsplit Confirmado e Pago!')
+        .setDescription(`Todos os valores foram depositados automaticamente nas contas dos participantes.`)
+        .setColor(0x57F287)
+        .addFields(
+          { 
+            name: '💰 Total Distribuído', 
+            value: `🪙 ${simulacao.resultado.valorDistribuir.toLocaleString()}`, 
+            inline: true 
+          },
+          { 
+            name: '💸 Taxa Guilda', 
+            value: `🪙 ${simulacao.resultado.taxa.toLocaleString()} (${simulacao.resultado.taxaPercentual}%)`, 
+            inline: true 
+          },
+          { 
+            name: '👥 Participantes Pagos', 
+            value: `${resultado.pagamentos.length}`, 
+            inline: true 
+          }
+        )
+        .setTimestamp();
+
+      if (simulacao.valorReparo > 0) {
+        embedConfirmacao.addFields({
+          name: '🔧 Reparo Descontado',
+          value: `🪙 ${simulacao.valorReparo.toLocaleString()}`,
+          inline: true
+        });
+      }
+
+      if (resultado.erros.length > 0) {
+        embedConfirmacao.addFields({
+          name: '⚠️ Atenção',
+          value: `${resultado.erros.length} pagamentos falharam. Verifique os logs.`,
+          inline: false
+        });
+      }
+
+      await interaction.update({
+        content: `✅ **Lootsplit confirmado e pagamentos realizados!**`,
+        embeds: [embedConfirmacao],
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`arquivar_evento_${eventId}`)
+              .setLabel('📁 Arquivar Evento')
+              .setStyle(ButtonStyle.Success)
+          )
+        ]
+      });
+
+      console.log(`[LOOTSPLIT] Pagamento confirmado com sucesso para evento ${eventId}`);
+
+    } catch (error) {
+      console.error('[LOOTSPLIT] Erro ao confirmar split:', error);
+      await interaction.reply({
+        content: `❌ Erro ao processar pagamento: ${error.message}`,
+        ephemeral: true
+      });
+    }
   }
 
   static async handleResimular(interaction, eventId) {
