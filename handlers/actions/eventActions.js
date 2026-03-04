@@ -11,7 +11,6 @@ class EventActions {
     this.activeEvents = new Map();
   }
 
-  // 🆕 NOVO: Método para forçar atualização completa do painel
   static async forceUpdatePanel(interaction, eventId) {
     try {
       const event = this.activeEvents.get(eventId);
@@ -34,12 +33,10 @@ class EventActions {
 
       if (!message) return false;
 
-      // Recriar embed e botões do zero com dados atualizados
       const criador = await interaction.guild.members.fetch(event.criadorId).catch(() => null);
       const embed = EventHandler.createEventEmbed(event, criador);
       const buttons = EventHandler.createEventButtonsByStatus(event);
 
-      // 🆕 IMPORTANTE: Editar a mensagem com os novos componentes
       await message.edit({
         embeds: [embed],
         components: buttons
@@ -113,7 +110,6 @@ class EventActions {
       return interaction.reply({ content: '❌ Evento cancelado!', ephemeral: true });
     }
 
-    // 🆕 VERIFICAÇÃO DE TRANCADO - Impedir participação se trancado
     if (event.trancado) {
       return interaction.reply({
         content: '🔒 Evento está **trancado**! Apenas administradores podem destrancar.',
@@ -132,7 +128,6 @@ class EventActions {
       return interaction.reply({ content: '❌ Vagas esgotadas!', ephemeral: true });
     }
 
-    // Adicionar participante
     event.participantes.push(interaction.user.id);
     event.participacaoIndividual.set(interaction.user.id, {
       userId: interaction.user.id,
@@ -142,7 +137,6 @@ class EventActions {
       entradaAtual: event.status === 'em_andamento' ? Date.now() : null
     });
 
-    // Atualizar painel imediatamente
     await this.forceUpdatePanel(interaction, eventId);
 
     await interaction.reply({
@@ -177,7 +171,6 @@ class EventActions {
 
     if (!event.participacaoIndividual) event.participacaoIndividual = new Map();
 
-    // Registrar entrada para todos os participantes
     for (const userId of event.participantes) {
       if (!event.participacaoIndividual.has(userId)) {
         const member = await interaction.guild.members.fetch(userId).catch(() => null);
@@ -194,7 +187,6 @@ class EventActions {
       }
     }
 
-    // Mover participantes para canal de voz
     let movidos = 0;
     try {
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId);
@@ -213,7 +205,6 @@ class EventActions {
       console.error('Erro ao mover:', error);
     }
 
-    // 🆕 ATUALIZAR PAINEL COM NOVOS BOTÕES (Iniciar→Pausar, Cancelar→Finalizar)
     await this.forceUpdatePanel(interaction, eventId);
 
     let msg = estavaPausado ? '▶️ Retomado!' : '▶️ Iniciado!';
@@ -240,7 +231,6 @@ class EventActions {
 
     event.status = 'pausado';
 
-    // Calcular tempo
     if (event.participacaoIndividual) {
       const agora = Date.now();
       for (const p of event.participacaoIndividual.values()) {
@@ -253,7 +243,6 @@ class EventActions {
       }
     }
 
-    // 🆕 ATUALIZAR PAINEL (Pausar→Retomar)
     await this.forceUpdatePanel(interaction, eventId);
 
     await interaction.reply({ content: `⏸️ **${event.nome}** pausado!`, ephemeral: true });
@@ -263,7 +252,6 @@ class EventActions {
     const event = this.activeEvents.get(eventId);
     if (!event) return interaction.reply({ content: '❌ Evento não encontrado!', ephemeral: true });
 
-    // Se pausado, retomar
     if (event.status === 'pausado') {
       return this.handleIniciar(interaction, eventId);
     }
@@ -272,7 +260,6 @@ class EventActions {
       return interaction.reply({ content: '❌ Evento não ativo!', ephemeral: true });
     }
 
-    // Registrar saída do usuário
     if (event.participacaoIndividual?.has(interaction.user.id)) {
       const p = event.participacaoIndividual.get(interaction.user.id);
       if (p.entradaAtual) {
@@ -300,8 +287,6 @@ class EventActions {
     }
 
     event.trancado = true;
-
-    // 🆕 Atualizar painel para mostrar botão de participar desabilitado
     await this.forceUpdatePanel(interaction, eventId);
 
     await interaction.reply({
@@ -323,8 +308,6 @@ class EventActions {
     }
 
     event.trancado = false;
-
-    // 🆕 Atualizar painel para reabilitar participação
     await this.forceUpdatePanel(interaction, eventId);
 
     await interaction.reply({
@@ -346,13 +329,11 @@ class EventActions {
 
     event.status = 'cancelado';
 
-    // Deletar canal de voz
     try {
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId);
       if (voiceChannel) await voiceChannel.delete('Cancelado');
     } catch {}
 
-    // Atualizar mensagem para mostrar cancelado (sem botões)
     try {
       const channel = await interaction.guild.channels.fetch(event.textChannelId);
       const message = await channel.messages.fetch(event.painelMessageId);
@@ -390,7 +371,6 @@ class EventActions {
     event.status = 'encerrado';
     event.finalizadoEm = Date.now();
 
-    // Calcular tempo final
     if (event.participacaoIndividual) {
       const agora = Date.now();
       for (const p of event.participacaoIndividual.values()) {
@@ -404,7 +384,6 @@ class EventActions {
     }
 
     try {
-      // Mover participantes
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId).catch(() => null);
       const canalAguardando = interaction.guild.channels.cache.find(c => c.name === '🔊╠Aguardando-Evento');
 
@@ -419,7 +398,6 @@ class EventActions {
         }
       }
 
-      // Criar canal de texto para loot
       const categoriaEncerrados = interaction.guild.channels.cache.find(
         c => c.name === '📁 EVENTOS ENCERRADOS' && c.type === ChannelType.GuildCategory
       );
@@ -446,7 +424,6 @@ class EventActions {
 
       if (voiceChannel) await voiceChannel.delete('Finalizado').catch(() => {});
 
-      // Atualizar mensagem original para FINALIZADO (sem botões)
       const channel = await interaction.guild.channels.fetch(event.textChannelId).catch(() => null);
       if (channel) {
         const message = await channel.messages.fetch(event.painelMessageId).catch(() => null);
@@ -461,13 +438,9 @@ class EventActions {
         }
       }
 
-      // 🆕 MELHORIA: Criar painel detalhado de loot no novo canal
       if (textChannel) {
         const duracao = event.iniciadoEm ? (Date.now() - event.iniciadoEm) : 0;
-        
-        // Usar o novo painel detalhado do LootSplitUI
         const painelLoot = LootSplitUI.createFinishedEventPanel(event, duracao);
-        
         await textChannel.send(painelLoot);
       }
 
@@ -488,34 +461,62 @@ class EventActions {
     }
   }
 
-  // 🆕 CORREÇÃO: Método com verificação de segurança
   static async handleSimulateLoot(interaction, eventId) {
+    console.log(`[EVENTACTIONS] Iniciando handleSimulateLoot para ${eventId}`);
+    
     try {
-      // Verificar se LootSplitUI está disponível
-      if (!LootSplitUI || typeof LootSplitUI.createSimulationModal !== 'function') {
-        console.error('[ERRO] LootSplitUI.createSimulationModal não está disponível');
-        return interaction.reply({ 
-          content: '❌ Erro interno: Sistema de simulação indisponível.', 
+      if (!LootSplitUI) {
+        console.error('[EVENTACTIONS] LootSplitUI não importado!');
+        return interaction.followUp({ 
+          content: '❌ Erro interno: LootSplitUI não disponível.', 
           ephemeral: true 
         });
       }
-      
+
+      if (typeof LootSplitUI.createSimulationModal !== 'function') {
+        console.error('[EVENTACTIONS] createSimulationModal não é uma função!');
+        return interaction.followUp({ 
+          content: '❌ Erro interno: Método de simulação indisponível.', 
+          ephemeral: true 
+        });
+      }
+
+      console.log(`[EVENTACTIONS] Criando modal...`);
       const modal = LootSplitUI.createSimulationModal(eventId);
+      
+      console.log(`[EVENTACTIONS] Mostrando modal...`);
       await interaction.showModal(modal);
+      
+      console.log(`[EVENTACTIONS] Modal mostrado com sucesso!`);
+
     } catch (error) {
-      console.error('[ERRO] ao mostrar modal:', error);
-      await interaction.reply({ 
-        content: '❌ Erro ao abrir simulação. Tente novamente.', 
-        ephemeral: true 
-      });
+      console.error('[EVENTACTIONS] Erro ao mostrar modal:', error);
+      
+      try {
+        if (interaction.deferred) {
+          await interaction.followUp({ 
+            content: `❌ Erro ao abrir simulação: ${error.message}`, 
+            ephemeral: true 
+          });
+        } else {
+          await interaction.reply({ 
+            content: `❌ Erro ao abrir simulação: ${error.message}`, 
+            ephemeral: true 
+          });
+        }
+      } catch (replyError) {
+        console.error('[EVENTACTIONS] Não foi possível enviar mensagem de erro:', replyError);
+      }
     }
   }
 
   static async handleResimulateLoot(interaction, eventId) {
+    console.log(`[EVENTACTIONS] Re-simulando para ${eventId}`);
+    
     try {
       if (!LootSplitUI || typeof LootSplitUI.createSimulationModal !== 'function') {
-        return interaction.reply({ 
-          content: '❌ Erro interno: Sistema de simulação indisponível.', 
+        return interaction.followUp({ 
+          content: '❌ Erro interno.', 
           ephemeral: true 
         });
       }
@@ -523,11 +524,16 @@ class EventActions {
       const modal = LootSplitUI.createSimulationModal(eventId);
       await interaction.showModal(modal);
     } catch (error) {
-      console.error('[ERRO] ao mostrar modal:', error);
-      await interaction.reply({ 
-        content: '❌ Erro ao reabrir simulação.', 
-        ephemeral: true 
-      });
+      console.error('[EVENTACTIONS] Erro ao reabrir modal:', error);
+      
+      try {
+        if (interaction.deferred) {
+          await interaction.followUp({ 
+            content: `❌ Erro: ${error.message}`, 
+            ephemeral: true 
+          });
+        }
+      } catch {}
     }
   }
 
@@ -554,7 +560,7 @@ class EventActions {
     try {
       if (!LootSplitUI || typeof LootSplitUI.createUpdateParticipationModal !== 'function') {
         return interaction.reply({ 
-          content: '❌ Erro interno: Modal indisponível.', 
+          content: '❌ Erro interno.', 
           ephemeral: true 
         });
       }
@@ -562,16 +568,19 @@ class EventActions {
       const modal = LootSplitUI.createUpdateParticipationModal(eventId);
       await interaction.showModal(modal);
     } catch (error) {
-      console.error('[ERRO] ao mostrar modal de atualização:', error);
+      console.error('[EVENTACTIONS] Erro ao mostrar modal de atualização:', error);
       await interaction.reply({ 
         content: '❌ Erro ao abrir atualização.', 
         ephemeral: true 
       });
     }
   }
+
+  static async handleEventStatsFilter(interaction) {
+    await EventStatsHandler.handleFilterChange(interaction);
+  }
 }
 
-// Exportar o Map para uso compartilhado
 EventActions.activeEvents = new Map();
 
 module.exports = EventActions;
