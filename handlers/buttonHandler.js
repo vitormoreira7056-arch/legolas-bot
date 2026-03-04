@@ -1,6 +1,7 @@
 const { Events } = require('discord.js');
 const ActionHandlers = require('./actions');
 const BankHandler = require('./bank');
+const LootSplitHandler = require('./lootSplitHandler'); // 🆕 ADICIONADO
 
 class ButtonHandler {
   static async handle(interaction, client) {
@@ -96,11 +97,9 @@ class ButtonHandler {
         console.log(`[LOOTSPLIT] Simulando para evento: ${eventId}`);
 
         try {
-          // NÃO deferir aqui - showModal precisa da interação original
           await ActionHandlers.handleSimulateLoot(interaction, eventId);
         } catch (error) {
           console.error(`[LOOTSPLIT] Erro ao simular:`, error);
-          // Se falhou, tenta responder adequadamente
           try {
             if (interaction.replied || interaction.deferred) {
               await interaction.followUp({
@@ -123,7 +122,6 @@ class ButtonHandler {
         console.log(`[LOOTSPLIT] Re-simulando para evento: ${eventId}`);
 
         try {
-          // NÃO deferir aqui - showModal precisa da interação original
           await ActionHandlers.handleResimulateLoot(interaction, eventId);
         } catch (error) {
           console.error(`[LOOTSPLIT] Erro ao reabrir simulação:`, error);
@@ -153,7 +151,6 @@ class ButtonHandler {
 
       if (customId.startsWith('update_participation_')) {
         const eventId = customId.replace('update_participation_', '');
-        // Também não pode deferir antes de modal
         await ActionHandlers.handleUpdateParticipation(interaction, eventId);
         return;
       }
