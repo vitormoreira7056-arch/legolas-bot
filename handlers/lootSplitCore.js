@@ -1,83 +1,56 @@
 const fs = require('fs');
 const path = require('path');
+const ConfigHandler = require('./configHandler');
 
 class LootSplitCore {
   static calcularDivisao(evento, valorTotal, ajustes = {}) {
-    const ConfigHandler = require('./configHandler');
     const config = ConfigHandler.getConfig(evento.guildId) || {};
-    const taxaPercentual = config.taxaPadrao || 10;
+    const taxaPercentual = config.taxaGuilda || 10;
     const valorTaxa = Math.floor(valorTotal * (taxaPercentual / 100));
-    const valorDistribuir = valorTotal - valorTaxa;
+    const valorLiquido = valorTotal - valorTaxa;
 
-    // Suportar tanto presenceData quanto participacaoIndividual
-    const participacoes = evento.participacaoIndividual || 
-      (evento.presenceData ? new Map(Object.entries(evento.presenceData.participants || {})) : new Map());
+    const participantes = [];
+    let tempoTotal = 0;
 
-    if (!participacoes || participacoes.size === 0) {
-      const numParticipantes = evento.participants?.length || evento.participantes?.length || 1;
-      const valorPorPessoa = Math.floor(valorDistribuir / numParticipantes);
-      
-      const resultado = {};
-      const participants = evento.participants || evento.participantes || [];
-      for (const userId of participants) {
-        resultado[userId] = {
-          userId,
-          nickname: 'Desconhecido',
-          valor: valorPorPessoa,
-          porcentagem: (100 / numParticipantes).toFixed(1),
-          tempoParticipado: '00:00:00',
-          ajuste: null
-        };
-      }
-      return { 
-        taxa: valorTaxa, 
-        taxaPercentual: taxaPercentual,
-        valorTotal: valorTotal,
-        valorDistribuir: valorDistribuir,
-        distribuicao: resultado 
-      };
-    }
-
-    let tempoTotalValido = 0;
-    const participantesValidos = [];
-
-    for (const [userId, participacao] of participacoes) {
-      const tempoTotal = participacao.tempoTotal || participacao.totalTime || 0;
-      const ajuste = ajustes[userId] || 100;
-      const tempoAjustado = tempoTotal * (ajuste / 100);
-      
-      tempoTotalValido += tempoAjustado;
-      participantesValidos.push({
+    // Pegar participações
+    const participacoes = evento.participacaoIndividual || new Map();
+    
+    for (const [userId, part] of participacoes) {
+      const tempo = part.tempoTotal || part.totalTime || 0;
+      participantes.push({
         userId,
-        nickname: participacao.nickname || 'Desconhecido',
-        tempoOriginal: tempoTotal,
-        tempoAjustado,
-        ajuste
+        nickname: part.nickname || 'Desconhecido',
+        tempo,
+        tempoParticipado: this.formatarTempo(tempo)
       });
+      tempoTotal += tempo;
     }
 
-    const resultado = {};
-    for (const p of participantesValidos) {
-      const proporcao = tempoTotalValido > 0 ? p.tempoAjustado / tempoTotalValido : 0;
-      const valor = valorDistribuir * proporcao;
-      const porcentagem = (proporcao * 100).toFixed(1);
-
-      resultado[p.userId] = {
+    // Calcular distribuição
+    const distribuicao = {};
+    for (const p of participantes) {
+      const porcentagem = tempoTotal > 0 ? (p.tempo / tempoTotal) : (1 / participantes.length);
+      const ajuste = ajustes[p.userId] || 100; // 100% = valor normal
+      const valorBase = valorLiquido * porcentagem;
+      const valorAjustado = Math.floor(valorBase * (ajuste / 100));
+      
+      distribuicao[p.userId] = {
         userId: p.userId,
         nickname: p.nickname,
-        valor: Math.floor(valor),
-        porcentagem: porcentagem,
-        tempoParticipado: this.formatarTempo(p.tempoOriginal),
-        ajuste: p.ajuste !== 100 ? `${p.ajuste}%` : null
+        valor: valorAjustado,
+        porcentagem: (porcentagem * 100).toFixed(1),
+        tempoParticipado: p.tempoParticipado,
+        ajuste: ajuste !== 100 ? `${ajuste}%` : null
       };
     }
 
     return {
+      valorTotal,
       taxa: valorTaxa,
-      taxaPercentual: taxaPercentual,
-      valorTotal: valorTotal,
-      valorDistribuir: valorDistribuir,
-      distribuicao: resultado
+      taxaPercentual,
+      valorDistribuir: valorLiquido,
+      distribuicao,
+      tempoTotal
     };
   }
 
@@ -96,60 +69,25 @@ class LootSplitCore {
       if (fs.existsSync(arquivo)) {
         dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
       }
-    } catch (error) {
-      console.error('Erro ao ler arquivo de lootsplits:', error);
+    } catch (e) {
+      console.error('Erro ao ler arquivo:', e);
     }
 
     if (!dados[evento.guildId]) dados[evento.guildId] = {};
     
     dados[evento.guildId][evento.id] = {
-      nome: evento.nome,
-      data: new Date().toISOString(),
-      resultado: resultado,
-      finalizado: false
+      evento: {
+        id: evento.id,
+        nome: evento.nome,
+        guildId: evento.guildId,
+        participantes: Array.from(evento.participacaoIndividual?.entries() || [])
+      },
+      resultado,
+      finalizado: false,
+      data: new Date().toISOString()
     };
 
-    try {
-      fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
-    } catch (error) {
-      console.error('Erro ao salvar simulação:', error);
-    }
-  }
-
-  static async finalizarSplit(evento, resultado, interaction) {
-    const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
-    let dados = {};
-    
-    try {
-      if (fs.existsSync(arquivo)) {
-        dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-        if (dados[evento.guildId]?.[evento.id]) {
-          dados[evento.guildId][evento.id].finalizado = true;
-          dados[evento.guildId][evento.id].dataFinalizacao = new Date().toISOString();
-          fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
-        }
-      }
-    } catch (error) {
-      console.error('Erro ao finalizar split:', error);
-    }
-
-    const db = require('../utils/database');
-    for (const [userId, dadosUser] of Object.entries(resultado.distribuicao)) {
-      try {
-        const user = db.getUser(userId);
-        user.saldo += dadosUser.valor;
-        db.updateUser(userId, user);
-
-        db.addTransaction('loot_split', userId, dadosUser.valor, {
-          evento: evento.nome,
-          eventoId: evento.id
-        });
-      } catch (error) {
-        console.error(`Erro ao processar pagamento para ${userId}:`, error);
-      }
-    }
-
-    return true;
+    fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
   }
 
   static async carregarSimulacao(guildId, eventId) {
@@ -160,11 +98,30 @@ class LootSplitCore {
         const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
         return dados[guildId]?.[eventId] || null;
       }
-    } catch (error) {
-      console.error('Erro ao carregar simulação:', error);
+    } catch (e) {
+      console.error('Erro ao carregar simulação:', e);
     }
     
     return null;
+  }
+
+  static async finalizarSplit(evento, resultado, interaction) {
+    // Marcar como finalizado
+    const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
+    
+    try {
+      const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
+      if (dados[evento.guildId]?.[evento.id]) {
+        dados[evento.guildId][evento.id].finalizado = true;
+        dados[evento.guildId][evento.id].dataFinalizacao = new Date().toISOString();
+        fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
+      }
+    } catch (e) {
+      console.error('Erro ao finalizar:', e);
+    }
+
+    // Aqui você pode adicionar lógica de pagamento automático se quiser
+    return true;
   }
 }
 
