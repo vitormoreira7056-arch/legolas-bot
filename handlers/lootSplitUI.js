@@ -3,7 +3,7 @@ const ConfigHandler = require('./configHandler');
 
 class LootSplitUI {
   static createFinishedEventPanel(evento, duracaoTotalMs) {
-    const config = ConfigHandler.getConfig(evento.guildId);
+    const config = ConfigHandler.getConfig(evento.guildId) || {};
     const taxaGuilda = config.taxaPadrao || 10;
     
     const duracaoHoras = Math.floor(duracaoTotalMs / (1000 * 60 * 60));
@@ -14,23 +14,28 @@ class LootSplitUI {
     let tempoTotalParticipacao = 0;
     const participantesDetalhados = [];
 
-    if (evento.participacaoIndividual) {
-      for (const [userId, participacao] of evento.participacaoIndividual) {
-        tempoTotalParticipacao += participacao.tempoTotal;
+    // Suportar tanto presenceData (novo) quanto participacaoIndividual (legado)
+    const participacoes = evento.participacaoIndividual || 
+      (evento.presenceData ? new Map(Object.entries(evento.presenceData.participants || {})) : new Map());
+
+    if (participacoes) {
+      for (const [userId, participacao] of participacoes) {
+        const tempoTotal = participacao.tempoTotal || participacao.totalTime || 0;
+        tempoTotalParticipacao += tempoTotal;
         
         const porcentagemParticipacao = duracaoTotalMs > 0 
-          ? ((participacao.tempoTotal / duracaoTotalMs) * 100).toFixed(1)
+          ? ((tempoTotal / duracaoTotalMs) * 100).toFixed(1)
           : 0;
 
-        const horas = Math.floor(participacao.tempoTotal / (1000 * 60 * 60));
-        const minutos = Math.floor((participacao.tempoTotal % (1000 * 60 * 60)) / (1000 * 60));
-        const segundos = Math.floor((participacao.tempoTotal % (1000 * 60)) / 1000);
+        const horas = Math.floor(tempoTotal / (1000 * 60 * 60));
+        const minutos = Math.floor((tempoTotal % (1000 * 60 * 60)) / (1000 * 60));
+        const segundos = Math.floor((tempoTotal % (1000 * 60)) / 1000);
         const tempoFormatado = `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
 
         participantesDetalhados.push({
           userId,
-          nickname: participacao.nickname,
-          tempoMs: participacao.tempoTotal,
+          nickname: participacao.nickname || 'Desconhecido',
+          tempoMs: tempoTotal,
           tempoFormatado,
           porcentagem: porcentagemParticipacao
         });
@@ -140,7 +145,7 @@ class LootSplitUI {
   }
 
   static createSimulationResultEmbed(evento, valorTotal, resultado) {
-    const config = ConfigHandler.getConfig(evento.guildId);
+    const config = ConfigHandler.getConfig(evento.guildId) || {};
     const taxaPercentual = config.taxaPadrao || 10;
     const valorTaxa = Math.floor(valorTotal * (taxaPercentual / 100));
     const valorLiquido = valorTotal - valorTaxa;
@@ -164,8 +169,8 @@ class LootSplitUI {
       }
       
       campos.push({
-        name: `${dados.nickname}`,
-        value: `${valorStr}\n⏱️ ${dados.tempoParticipado} (${dados.porcentagem}%)`,
+        name: `${dados.nickname || 'Desconhecido'}`,
+        value: `${valorStr}\n⏱️ ${dados.tempoParticipado || '00:00:00'} (${dados.porcentagem}%)`,
         inline: true
       });
     }
