@@ -183,7 +183,10 @@ class EventActions {
       };
     }
 
-    // 🆕 NOVO: Mover todos os participantes para o canal de voz automaticamente
+    // 🆕 CORREÇÃO: Mover todos os participantes para o canal de voz automaticamente
+    let movidos = 0;
+    let naoMovidos = [];
+
     try {
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId);
       if (voiceChannel) {
@@ -193,13 +196,15 @@ class EventActions {
             if (member && member.voice.channel) {
               // Só move se estiver em outro canal de voz
               await member.voice.setChannel(voiceChannel);
+              movidos++;
             } else if (member && !member.voice.channel) {
-              // Se não estiver em nenhum canal, não faz nada (não pode forçar entrar)
-              // Opcionalmente pode enviar DM avisando
+              // Se não estiver em nenhum canal de voz, adiciona à lista
+              naoMovidos.push(member.user.username);
             }
           } catch (moveError) {
             console.error(`Não foi possível mover ${userId}:`, moveError.message);
-            // Continua com os outros mesmo se um falhar
+            const member = await interaction.guild.members.fetch(userId).catch(() => null);
+            if (member) naoMovidos.push(member.user.username);
           }
         }
       }
@@ -219,8 +224,17 @@ class EventActions {
       console.error('Erro ao atualizar mensagem:', error);
     }
 
+    // Montar mensagem de resposta
+    let msgResposta = `▶️ Evento **${event.nome}** iniciado!\n\n`;
+    msgResposta += `✅ **${movidos}** participante(s) movido(s) para o canal de voz.\n`;
+
+    if (naoMovidos.length > 0) {
+      msgResposta += `⚠️ **${naoMovidos.length}** não movido(s) (não estavam em canal de voz): ${naoMovidos.join(', ')}\n`;
+      msgResposta += `🔊 Entre em qualquer canal de voz para ser movido automaticamente.`;
+    }
+
     await interaction.reply({
-      content: `▶️ Evento **${event.nome}** iniciado! Todos os participantes foram movidos para o canal de voz!`,
+      content: msgResposta,
       ephemeral: true
     });
   }
@@ -513,4 +527,126 @@ class EventActions {
     event.presenceData.endTime = Date.now();
 
     const now = Date.now();
-    for
+    for (const userId in event.presenceData.participants) {
+      const p = event.presenceData.participants[userId];
+      if (p.isPresent && p.joinTime) {
+        p.totalTime += (now - p.joinTime);
+        p.isPresent = false;
+      }
+    }
+
+    // 🆕 CORREÇÃO: Salvar estatísticas antes de remover
+    try {
+      await EventStatsHandler.saveEventStats(event, interaction.guild);
+    } catch (error) {
+      console.error('Erro ao salvar estatísticas:', error);
+    }
+
+    // 🆕 CORREÇÃO: Buscar canais e categoria
+    const categoriaEncerrados = interaction.guild.channels.cache.find(
+      c => c.type === ChannelType.GuildCategory && c.name === '📁 EVENTOS ENCERRADOS'
+    );
+
+    const textChannel = interaction.guild.channels.cache.get(event.textChannelId);
+    const voiceChannel = interaction.guild.channels.cache.get(event.voiceChannelId);
+
+    // 🆕 CORREÇÃO: Mover APENAS o canal de texto para EVENTOS ENCERRADOS
+    if (textChannel && categoriaEncerrados) {
+      try {
+        await textChannel.setParent(categoriaEncerrados.id, { lockPermissions: false });
+        // Renomear para indicar que está encerrado
+        await textChannel.setName(`📁-${event.nome.toLowerCase().replace(/\s+/g, '-')}`);
+        // Trancar o canal (somente visualização)
+        await textChannel.permissionOverwrites.edit(interaction.guild.id, {
+          SendMessages: false,
+          AddReactions: false
+        });
+      } catch (error) {
+        console.error('Erro ao mover canal de texto:', error);
+      }
+    }
+
+    // 🆕 CORREÇÃO: DELETAR o canal de voz (NÃO mover)
+    if (voiceChannel) {
+      try {
+        await voiceChannel.delete('Evento finalizado');
+      } catch (error) {
+        console.error('Erro ao deletar canal de voz:', error);
+      }
+    }
+
+    // Atualizar mensagem de participação
+    try {
+      const channel = await interaction.guild.channels.fetch(event.participarChannelId);
+      const message = await channel.messages.fetch(event.participarMessageId);
+
+      const embed = new EmbedBuilder()
+        .setTitle(`🏆 **${event.nome}** - FINALIZADO`)
+        .setDescription(`Evento finalizado por ${interaction.user}\n📁 Canal arquivado em <#${textChannel?.id || 'desconhecido'}>`)
+        .setColor(0x57F287)
+        .setTimestamp();
+
+      await message.edit({ embeds: [embed], components: [] });
+    } catch (error) {
+      console.error('Erro ao atualizar mensagem:', error);
+    }
+
+    // Remover do mapa de eventos ativos
+    EventActions.activeEvents.delete(eventId);
+
+    await interaction.reply({
+      content: `✅ Evento **${event.nome}** finalizado!\n📁 Canal de texto arquivado.\n🔊 Canal de voz deletado.`,
+      ephemeral: true
+    });
+  }
+
+  // Handlers adicionais para botões de loot
+  static async handleSimulateLoot(interaction, eventId) {
+    const modal = LootSplitUI.createSimulationModal(eventId);
+    await interaction.showModal(modal);
+  }
+
+  static async handleResimulateLoot(interaction, eventId) {
+    const modal = LootSplitUI.createSimulationModal(eventId);
+    await interaction.showModal(modal);
+  }
+
+  static async handleArchiveLoot(interaction, eventId) {
+    const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
+    const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
+
+    if (!isADM && !isCaller) {
+      return interaction.reply({
+        content: '❌ Apenas ADMs ou Callers podem arquivar o evento!',
+        ephemeral: true
+      });
+    }
+
+    await LootSplitHandler.archiveAndDeposit(interaction, eventId);
+    await EventStatsHandler.updatePanel(interaction.guild);
+  }
+
+  static async handleUpdateParticipation(interaction, eventId) {
+    const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
+    const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
+
+    if (!isADM && !isCaller) {
+      return interaction.reply({
+        content: '❌ Apenas ADMs ou Callers podem atualizar participações!',
+        ephemeral: true
+      });
+    }
+
+    const modal = LootSplitUI.createUpdateParticipationModal(eventId);
+    await interaction.showModal(modal);
+  }
+
+  static async handleEventStatsFilter(interaction) {
+    await EventStatsHandler.handleFilterChange(interaction);
+  }
+}
+
+// Map estático para armazenar eventos ativos
+EventActions.activeEvents = new Map();
+
+module.exports = EventActions;
