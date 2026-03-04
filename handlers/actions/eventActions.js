@@ -183,7 +183,7 @@ class EventActions {
       };
     }
 
-    // 🆕 CORREÇÃO: Mover todos os participantes para o canal de voz automaticamente
+    // Mover todos os participantes para o canal de voz automaticamente
     let movidos = 0;
     let naoMovidos = [];
 
@@ -224,7 +224,7 @@ class EventActions {
       console.error('Erro ao atualizar mensagem:', error);
     }
 
-    // 🆕 CORREÇÃO: Montar mensagem de resposta detalhada
+    // Montar mensagem de resposta detalhada
     let msgResposta = `▶️ Evento **${event.nome}** iniciado!\n\n`;
     msgResposta += `✅ **${movidos}** participante(s) movido(s) para o canal de voz.\n`;
 
@@ -535,12 +535,12 @@ class EventActions {
       }
     }
 
-    // 🆕 CORREÇÃO: Buscar canal "aguardando-evento" na categoria "banco da guilda"
+    // Buscar canal "aguardando-evento" na categoria "banco da guilda"
     const canalAguardando = interaction.guild.channels.cache.find(
       c => c.type === ChannelType.GuildVoice && c.name === 'aguardando-evento'
     );
 
-    // 🆕 CORREÇÃO: Buscar categoria de eventos encerrados
+    // Buscar categoria de eventos encerrados
     const categoriaEncerrados = interaction.guild.channels.cache.find(
       c => c.type === ChannelType.GuildCategory && c.name === '📁 EVENTOS ENCERRADOS'
     );
@@ -548,7 +548,7 @@ class EventActions {
     // Buscar o canal de voz do evento
     const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId).catch(() => null);
 
-    // 🆕 CORREÇÃO: Mover participantes do canal de voz para "aguardando-evento"
+    // Mover participantes do canal de voz para "aguardando-evento"
     if (voiceChannel && canalAguardando) {
       try {
         const membrosNoCanal = voiceChannel.members;
@@ -564,7 +564,7 @@ class EventActions {
       }
     }
 
-    // 🆕 CORREÇÃO: Converter canal de voz em canal de texto e mover para encerrados
+    // Converter canal de voz em canal de texto e mover para encerrados
     let canalEncerradoId = null;
     if (voiceChannel && categoriaEncerrados) {
       try {
@@ -617,13 +617,6 @@ class EventActions {
           embeds: [embedEncerrado],
           components: [botoesLoot]
         });
-
-        // Salvar estatísticas antes de deletar o canal de voz
-        try {
-          await EventStatsHandler.saveEventStats(event, interaction.guild);
-        } catch (error) {
-          console.error('Erro ao salvar estatísticas:', error);
-        }
 
         // Deletar o canal de voz antigo
         await voiceChannel.delete('Evento finalizado - convertido para texto');
