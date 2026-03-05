@@ -63,7 +63,8 @@ class LootSplitCore {
     return `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
   }
 
-  static async salvarSimulacao(evento, resultado, valorReparo = 0) {
+  // 🆕 CORREÇÃO: Adicionado parâmetro canalEventoId
+  static async salvarSimulacao(evento, resultado, valorReparo = 0, canalEventoId = null) {
     const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
     let dados = {};
 
@@ -86,12 +87,14 @@ class LootSplitCore {
       },
       resultado,
       valorReparo,
+      canalEventoId, // 🆕 SALVAR O CANAL DO EVENTO
       finalizado: false,
       pago: false,
       data: new Date().toISOString()
     };
 
     fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
+    console.log(`[LOOTSPLIT] Simulação salva: ${evento.id}, Canal: ${canalEventoId}`);
   }
 
   static async carregarSimulacao(guildId, eventId) {
@@ -100,7 +103,12 @@ class LootSplitCore {
     try {
       if (fs.existsSync(arquivo)) {
         const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-        return dados[guildId]?.[eventId] || null;
+        const simulacao = dados[guildId]?.[eventId];
+        
+        if (simulacao) {
+          console.log(`[LOOTSPLIT] Simulação carregada: ${eventId}, Canal: ${simulacao.canalEventoId || 'N/A'}`);
+          return simulacao;
+        }
       }
     } catch (e) {
       console.error('Erro ao carregar simulação:', e);
@@ -109,7 +117,29 @@ class LootSplitCore {
     return null;
   }
 
-  // 🆕 MELHORADO: Agora retorna resultado detalhado para uso no handler
+  // 🆕 MÉTODO: Buscar simulação em qualquer guild (para debug)
+  static async buscarSimulacaoGlobal(eventId) {
+    const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
+
+    try {
+      if (fs.existsSync(arquivo)) {
+        const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
+        
+        for (const [guildId, eventos] of Object.entries(dados)) {
+          if (eventos[eventId]) {
+            console.log(`[LOOTSPLIT] Simulação encontrada na guild ${guildId}: ${eventId}`);
+            return { guildId, simulacao: eventos[eventId] };
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Erro ao buscar simulação global:', e);
+    }
+
+    return null;
+  }
+
+  // 🆕 MELHORADO: Agora realiza o pagamento aos participantes
   static async finalizarSplit(evento, resultado, interaction) {
     const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
 
@@ -121,6 +151,7 @@ class LootSplitCore {
         throw new Error('Simulação não encontrada');
       }
 
+      // Verificar se já foi pago para evitar duplicidade
       if (simulacao.pago) {
         console.log(`[LOOTSPLIT] Split ${evento.id} já foi pago anteriormente`);
         return { sucesso: false, jaPago: true };
@@ -141,11 +172,13 @@ class LootSplitCore {
           const valor = Math.floor(dadosDistribuicao.valor || 0);
           
           if (valor > 0) {
+            // Adicionar saldo ao usuário
             const user = db.getUser(userId);
             user.saldo += valor;
             user.totalDepositado = (user.totalDepositado || 0) + valor;
             db.updateUser(userId, user);
 
+            // Registrar transação
             db.addTransaction('loot_split', userId, valor, {
               eventoId: evento.id,
               eventoNome: evento.nome,
@@ -167,11 +200,9 @@ class LootSplitCore {
         }
       }
 
-      // 🆕 CORREÇÃO: Depositar taxa da guilda usando método correto
+      // DEPOSITAR TAXA DA GUILDA (registrar como transação)
       if (taxa > 0) {
         try {
-          // Criar uma \"conta\" virtual para a guilda ou adicionar ao saldo de um usuário especial
-          // Vamos criar um registro de transação especial para a guilda
           db.addTransaction('taxa_guilda', 'GUILDA', taxa, {
             eventoId: evento.id,
             eventoNome: evento.nome,
@@ -185,7 +216,7 @@ class LootSplitCore {
         }
       }
 
-      // Registrar reparo se houver
+      // REGISTRAR REPARO SE HOUVER
       if (valorReparo > 0) {
         try {
           db.addTransaction('reparo_guilda', 'SISTEMA', valorReparo, {
@@ -241,6 +272,7 @@ class LootSplitCore {
       finalizado: simulacao.finalizado,
       pago: simulacao.pago,
       data: simulacao.data,
+      canalEventoId: simulacao.canalEventoId, // 🆕 Retornar canal
       totalParticipantes: Object.keys(simulacao.resultado.distribuicao).length
     };
   }
