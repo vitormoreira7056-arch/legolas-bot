@@ -336,7 +336,6 @@ class ConfigHandler {
       .setTimestamp();
   }
 
-  // 🆕 NOVO: Botões atualizados com transferência
   static createConsultarSaldoButton() {
     return new ActionRowBuilder()
       .addComponents(
@@ -373,7 +372,7 @@ class ConfigHandler {
       .setTitle('🏦 **SALDO DA GUILDA**')
       .setDescription(
         '> Resumo financeiro completo da guilda\n\n' +
-        `**⏰ Atualizado:** <t:${Math.floor(Date.now() / 1000)}:R>`
+        `**⏰ Atualizado:** `
       )
       .setColor(0x2ECC71)
       .setThumbnail('https://i.imgur.com/57FMAF7.png')
