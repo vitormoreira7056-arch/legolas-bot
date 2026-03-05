@@ -2,20 +2,116 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const fs = require('fs');
 const path = require('path');
 const LootSplitCore = require('./lootSplitCore');
-const LootSplitUI = require('./lootSplitUI'); // 🆕 ADICIONADO
+const LootSplitUI = require('./lootSplitUI');
 const ConfigHandler = require('./configHandler');
 const EventStatsHandler = require('./eventStatsHandler');
 const db = require('../utils/database');
 
 class LootSplitHandler {
+  // 🆕 CORREÇÃO: Implementação completa do método loadSimulations
   static async loadSimulations() {
     console.log('[LOOTSPLIT] Carregando simulações salvas...');
-    // Implementação existente...
+    try {
+      const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
+      if (fs.existsSync(arquivo)) {
+        const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
+        let totalSimulacoes = 0;
+        
+        // Contar simulações carregadas
+        for (const guildId of Object.keys(dados)) {
+          const eventos = dados[guildId];
+          totalSimulacoes += Object.keys(eventos).length;
+          
+          // Verificar se há simulações pendentes (não pagas) e logar
+          for (const [eventId, simulacao] of Object.entries(eventos)) {
+            if (!simulacao.pago && !simulacao.finalizado) {
+              console.log(`[LOOTSPLIT] Simulação pendente encontrada: ${eventId} (Guild: ${guildId})`);
+            }
+          }
+        }
+        
+        console.log(`[LOOTSPLIT] ${totalSimulacoes} simulações carregadas de ${Object.keys(dados).length} guilds`);
+      } else {
+        console.log('[LOOTSPLIT] Arquivo de simulações não encontrado, iniciando vazio');
+      }
+    } catch (error) {
+      console.error('[LOOTSPLIT] Erro ao carregar simulações:', error);
+    }
   }
 
+  // 🆕 CORREÇÃO: Implementação completa do método archiveAndDeposit
   static async archiveAndDeposit(interaction, eventId) {
     console.log(`[LOOTSPLIT] Arquivando evento: ${eventId}`);
-    // Implementação existente...
+    
+    try {
+      const simulacao = await LootSplitCore.carregarSimulacao(interaction.guild.id, eventId);
+      
+      if (!simulacao) {
+        return interaction.reply({
+          content: '❌ Simulação não encontrada!',
+          ephemeral: true
+        });
+      }
+
+      if (simulacao.pago) {
+        // Se já foi pago, apenas arquiva
+        await interaction.reply({
+          content: '✅ Evento já foi pago e será arquivado.',
+          ephemeral: true
+        });
+        
+        // Deletar canal após 3 segundos
+        setTimeout(async () => {
+          try {
+            if (interaction.channel) {
+              await interaction.channel.delete('Evento arquivado');
+            }
+          } catch (error) {
+            console.error('[LOOTSPLIT] Erro ao deletar canal:', error);
+          }
+        }, 3000);
+        
+        return;
+      }
+
+      // Se não foi pago, pergunta se deseja pagar ou apenas arquivar
+      const embed = new EmbedBuilder()
+        .setTitle('📦 **ARQUIVAMENTO DE EVENTO**')
+        .setDescription(
+          `O evento **${simulacao.evento.nome}** ainda não teve o pagamento processado.\n\n` +
+          `Deseja processar o pagamento antes de arquivar ou apenas arquivar o evento?`
+        )
+        .setColor(0xF39C12);
+
+      const buttons = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId(`pagar_e_arquivar_${eventId}`)
+            .setLabel('💰 Pagar e Arquivar')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`apenas_arquivar_${eventId}`)
+            .setLabel('📦 Apenas Arquivar')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(`cancelar_arquivamento_${eventId}`)
+            .setLabel('❌ Cancelar')
+            .setStyle(ButtonStyle.Danger)
+        );
+
+      await interaction.reply({
+        embeds: [embed],
+        components: [buttons],
+        ephemeral: true
+      });
+
+    } catch (error) {
+      console.error('[LOOTSPLIT] Erro ao arquivar:', error);
+      await interaction.reply({
+        content: '❌ Erro ao processar arquivamento!',
+        ephemeral: true
+      });
+    }
   }
 
   static async enviarParaFinanceiro(interaction, eventId) {
