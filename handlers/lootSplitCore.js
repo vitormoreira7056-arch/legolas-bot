@@ -19,9 +19,13 @@ class LootSplitCore {
 
     for (const [userId, part] of participacoes) {
       const tempo = part.tempoTotal || part.totalTime || 0;
+      
+      const userData = db.getUser(userId);
+      const nickDisplay = userData.nickDoJogo || part.nickname || 'Desconhecido';
+      
       participantes.push({
         userId,
-        nickname: part.nickname || 'Desconhecido',
+        nickname: nickDisplay,
         tempo,
         tempoParticipado: this.formatarTempo(tempo)
       });
@@ -63,7 +67,6 @@ class LootSplitCore {
     return `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
   }
 
-  // 🆕 CORREÇÃO: Adicionado parâmetro canalEventoId
   static async salvarSimulacao(evento, resultado, valorReparo = 0, canalEventoId = null) {
     const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
     let dados = {};
@@ -78,16 +81,30 @@ class LootSplitCore {
 
     if (!dados[evento.guildId]) dados[evento.guildId] = {};
 
+    const participantesArray = [];
+    if (evento.participacaoIndividual) {
+      for (const [userId, part] of evento.participacaoIndividual.entries()) {
+        const userData = db.getUser(userId);
+        participantesArray.push([
+          userId,
+          {
+            ...part,
+            nickname: userData.nickDoJogo || part.nickname || 'Desconhecido'
+          }
+        ]);
+      }
+    }
+
     dados[evento.guildId][evento.id] = {
       evento: {
         id: evento.id,
         nome: evento.nome,
         guildId: evento.guildId,
-        participantes: Array.from(evento.participacaoIndividual?.entries() || [])
+        participantes: participantesArray
       },
       resultado,
       valorReparo,
-      canalEventoId, // 🆕 SALVAR O CANAL DO EVENTO
+      canalEventoId,
       finalizado: false,
       pago: false,
       data: new Date().toISOString()
@@ -104,7 +121,7 @@ class LootSplitCore {
       if (fs.existsSync(arquivo)) {
         const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
         const simulacao = dados[guildId]?.[eventId];
-        
+
         if (simulacao) {
           console.log(`[LOOTSPLIT] Simulação carregada: ${eventId}, Canal: ${simulacao.canalEventoId || 'N/A'}`);
           return simulacao;
@@ -117,14 +134,13 @@ class LootSplitCore {
     return null;
   }
 
-  // 🆕 MÉTODO: Buscar simulação em qualquer guild (para debug)
   static async buscarSimulacaoGlobal(eventId) {
     const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
 
     try {
       if (fs.existsSync(arquivo)) {
         const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-        
+
         for (const [guildId, eventos] of Object.entries(dados)) {
           if (eventos[eventId]) {
             console.log(`[LOOTSPLIT] Simulação encontrada na guild ${guildId}: ${eventId}`);
@@ -139,7 +155,6 @@ class LootSplitCore {
     return null;
   }
 
-  // 🆕 MELHORADO: Agora realiza o pagamento aos participantes
   static async finalizarSplit(evento, resultado, interaction) {
     const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
 
@@ -151,7 +166,6 @@ class LootSplitCore {
         throw new Error('Simulação não encontrada');
       }
 
-      // Verificar se já foi pago para evitar duplicidade
       if (simulacao.pago) {
         console.log(`[LOOTSPLIT] Split ${evento.id} já foi pago anteriormente`);
         return { sucesso: false, jaPago: true };
@@ -163,22 +177,19 @@ class LootSplitCore {
       console.log(`[LOOTSPLIT] Total a distribuir: ${Object.values(distribuicao).reduce((a, b) => a + (b.valor || 0), 0)}`);
       console.log(`[LOOTSPLIT] Taxa guilda: ${taxa}`);
 
-      // PAGAR CADA PARTICIPANTE
       const pagamentosRealizados = [];
       const erros = [];
 
       for (const [userId, dadosDistribuicao] of Object.entries(distribuicao)) {
         try {
           const valor = Math.floor(dadosDistribuicao.valor || 0);
-          
+
           if (valor > 0) {
-            // Adicionar saldo ao usuário
             const user = db.getUser(userId);
             user.saldo += valor;
             user.totalDepositado = (user.totalDepositado || 0) + valor;
             db.updateUser(userId, user);
 
-            // Registrar transação
             db.addTransaction('loot_split', userId, valor, {
               eventoId: evento.id,
               eventoNome: evento.nome,
@@ -200,7 +211,6 @@ class LootSplitCore {
         }
       }
 
-      // DEPOSITAR TAXA DA GUILDA (registrar como transação)
       if (taxa > 0) {
         try {
           db.addTransaction('taxa_guilda', 'GUILDA', taxa, {
@@ -209,14 +219,13 @@ class LootSplitCore {
             tipo: 'receita_taxa',
             valor: taxa
           });
-          
+
           console.log(`[LOOTSPLIT] Taxa de ${taxa} registrada para a guilda`);
         } catch (error) {
           console.error('[LOOTSPLIT] Erro ao registrar taxa da guilda:', error);
         }
       }
 
-      // REGISTRAR REPARO SE HOUVER
       if (valorReparo > 0) {
         try {
           db.addTransaction('reparo_guilda', 'SISTEMA', valorReparo, {
@@ -230,7 +239,6 @@ class LootSplitCore {
         }
       }
 
-      // Marcar como finalizado e pago
       dados[evento.guildId][evento.id].finalizado = true;
       dados[evento.guildId][evento.id].pago = true;
       dados[evento.guildId][evento.id].dataFinalizacao = new Date().toISOString();
@@ -272,7 +280,7 @@ class LootSplitCore {
       finalizado: simulacao.finalizado,
       pago: simulacao.pago,
       data: simulacao.data,
-      canalEventoId: simulacao.canalEventoId, // 🆕 Retornar canal
+      canalEventoId: simulacao.canalEventoId,
       totalParticipantes: Object.keys(simulacao.resultado.distribuicao).length
     };
   }
