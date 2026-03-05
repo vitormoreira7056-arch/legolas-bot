@@ -1,4 +1,3 @@
-// Banco de dados simples em memória (substituir por Replit DB ou MongoDB em produção)
 class Database {
   constructor() {
     this.users = new Map();
@@ -16,14 +15,18 @@ class Database {
         totalDepositado: 0,
         totalSacado: 0,
         registros: [],
-        // 🆕 NOVO: Sistema de XP
         xp: 0,
         nivel: 1,
         xpParaProximoNivel: 100,
         eventosParticipados: 0,
-        tempoTotalEventos: 0, // em ms
+        tempoTotalEventos: 0,
         conquistas: [],
-        dataRegistro: new Date().toISOString()
+        dataRegistro: new Date().toISOString(),
+        nickDoJogo: null,
+        guilda: null,
+        plataforma: null,
+        armaPrincipal: null,
+        aprovadoPor: null
       });
     }
     return this.users.get(userId);
@@ -36,22 +39,26 @@ class Database {
     return user;
   }
 
-  // 🆕 NOVO: Sistema de XP - CORRIGIDO
+  getDisplayName(userId, fallbackName = null) {
+    const user = this.getUser(userId);
+    if (user.nickDoJogo) {
+      return user.nickDoJogo;
+    }
+    return fallbackName || 'Desconhecido';
+  }
+
   addXP(userId, quantidade, motivo = 'Evento') {
     const user = this.getUser(userId);
-    const nivelAnterior = user.nivel; // Guardar nível antes de adicionar XP
+    const nivelAnterior = user.nivel;
     user.xp += quantidade;
 
-    // Verificar level up
     while (user.xp >= user.xpParaProximoNivel) {
       user.xp -= user.xpParaProximoNivel;
       user.nivel++;
-      // Fórmula: cada nível precisa de 20% mais XP
       user.xpParaProximoNivel = Math.floor(user.xpParaProximoNivel * 1.2);
     }
 
     this.updateUser(userId, user);
-    // CORREÇÃO: Comparar com nível anterior guardado, não chamar getUser novamente
     return { user, levelUp: user.nivel > nivelAnterior };
   }
 
@@ -194,7 +201,6 @@ class Database {
     return user;
   }
 
-  // 🆕 CORREÇÃO: Método completo para adicionar loot de evento
   addEventLoot(eventId, totalValor, participants, taxaGuilda = 0) {
     const valorComTaxa = totalValor * (1 - taxaGuilda);
     const valorPorPessoa = Math.floor(valorComTaxa / participants.length);
@@ -220,7 +226,6 @@ class Database {
     return distribuicao;
   }
 
-  // 🆕 CORREÇÃO: Método para calcular saldo total da guilda
   getGuildBalance() {
     let total = 0;
     for (const user of this.users.values()) {
