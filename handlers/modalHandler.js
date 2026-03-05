@@ -122,6 +122,7 @@ class ModalHandler {
       return true;
     }
 
+    // 🆕 NOVO: Handler para atualização de participação
     if (interaction.customId.startsWith('modal_update_participation_')) {
       const eventId = interaction.customId.replace('modal_update_participation_', '');
       await LootSplitHandler.processUpdateParticipation(interaction, eventId);
