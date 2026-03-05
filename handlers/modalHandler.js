@@ -1,4 +1,4 @@
-const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle } = require('discord.js'); // 🆕 CORRIGIDO: Adicionado ButtonBuilder e ButtonStyle
+const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const EmbedUtils = require('../utils/embedUtils');
 const EventHandler = require('./eventHandler');
 const ConfigHandler = require('./configHandler');
@@ -122,7 +122,6 @@ class ModalHandler {
       return true;
     }
 
-    // 🆕 NOVO: Handler para atualização de participação
     if (interaction.customId.startsWith('modal_update_participation_')) {
       const eventId = interaction.customId.replace('modal_update_participation_', '');
       await LootSplitHandler.processUpdateParticipation(interaction, eventId);
@@ -418,7 +417,8 @@ class ModalHandler {
       });
     }
 
-    let targetId = targetInput.replace(/[<@!>]/g, '');
+    // 🆕 CORREÇÃO: Regex corrigida para extrair ID de menções corretamente
+    let targetId = targetInput.replace(/<@!?/g, '').replace(/>/g, '');
 
     if (!/^\d{17,19}$/.test(targetId)) {
       return interaction.reply({
