@@ -1,6 +1,6 @@
 const { Events } = require('discord.js');
-const ActionHandlers = require('./actions'); // 🆕 ADICIONADO
-const BankHandler = require('./bank');
+const ActionHandlers = require('./actions');
+const BankCore = require('./bank/bankCore'); // 🆕 CORREÇÃO: Importação correta do sistema bancário
 const LootSplitHandler = require('./lootSplitHandler');
 
 class ButtonHandler {
@@ -80,13 +80,13 @@ class ButtonHandler {
 
       if (customId.startsWith('aprovar_venda_')) {
         const vendaId = customId.replace('aprovar_venda_', '');
-        await BankHandler.approveVenda(interaction, vendaId);
+        await BankCore.approveVenda(interaction, vendaId); // 🆕 CORREÇÃO: Usar BankCore em vez de BankHandler
         return;
       }
 
       if (customId.startsWith('recusar_venda_')) {
         const vendaId = customId.replace('recusar_venda_', '');
-        await BankHandler.rejectVenda(interaction, vendaId);
+        await BankCore.rejectVenda(interaction, vendaId); // 🆕 CORREÇÃO: Usar BankCore em vez de BankHandler
         return;
       }
 
