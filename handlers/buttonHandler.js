@@ -1,5 +1,5 @@
 const { Events } = require('discord.js');
-const ActionHandlers = require('./actions');
+const ActionHandlers = require('./actions'); // 🆕 ADICIONADO
 const BankHandler = require('./bank');
 const LootSplitHandler = require('./lootSplitHandler');
 
@@ -123,21 +123,19 @@ class ButtonHandler {
 
       // 🆕 CORREÇÃO: Extrair eventId e canalEventoId corretamente
       if (customId.startsWith('confirmar_split_financeiro_')) {
-        // Formato: confirmar_split_financeiro_EVENTID_CANALID
-        // EventId pode conter underscores, então pegamos tudo antes do último underscore
         const resto = customId.replace('confirmar_split_financeiro_', '');
         const lastUnderscore = resto.lastIndexOf('_');
-        
+
         if (lastUnderscore === -1) {
           throw new Error('Formato de customId inválido');
         }
-        
-        const eventId = resto.substring(0, lastUnderscore); // Tudo antes do último _
-        const canalEventoId = resto.substring(lastUnderscore + 1); // Tudo depois do último _
-        
+
+        const eventId = resto.substring(0, lastUnderscore);
+        const canalEventoId = resto.substring(lastUnderscore + 1);
+
         console.log(`[BOTÃO] EventId extraído: ${eventId}`);
         console.log(`[BOTÃO] CanalEventoId extraído: ${canalEventoId}`);
-        
+
         await LootSplitHandler.handleConfirmarSplitFinanceiro(interaction, eventId, canalEventoId);
         return;
       }
