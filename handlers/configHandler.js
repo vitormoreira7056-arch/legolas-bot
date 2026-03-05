@@ -357,34 +357,38 @@ class ConfigHandler {
       );
   }
 
+  // 🆕 CORREÇÃO: Método atualizado com cálculos corretos
   static createSaldoGuildaEmbed(db, config) {
-    const saldoTotalGuilda = db.getGuildBalance();
-    const taxaAtual = config ? config.taxaGuilda : 0;
-
-    const arrecadacaoTaxas = Math.floor(saldoTotalGuilda * (taxaAtual / 100));
-
-    let dividaTotal = 0;
-    for (const user of db.users.values()) {
-      dividaTotal += user.emprestimo;
-    }
+    // 1. Saldo Geral no Bot = Soma dos saldos de todos os membros
+    const saldoTotalMembros = db.getGuildBalance();
+    
+    // 2. Arrecadação (Taxas) = Soma de todas as taxas arrecadadas (eventos + vendas de baú)
+    const arrecadacaoTaxas = db.getTotalTaxasArrecadadas();
+    
+    // 3. Dívida com Membros = Total de empréstimos pendentes
+    const dividaTotal = db.getTotalDividas();
+    
+    // 4. Patrimônio Líquido = (Saldo dos membros + Taxas arrecadadas) - Dívidas
+    // Ou seja: Tudo que o bot gerencia menos o que deve aos membros
+    const patrimonioLiquido = (saldoTotalMembros + arrecadacaoTaxas) - dividaTotal;
 
     return new EmbedBuilder()
       .setTitle('🏦 **SALDO DA GUILDA**')
       .setDescription(
         '> Resumo financeiro completo da guilda\n\n' +
-        `**⏰ Atualizado:** `
+        `**⏰ Atualizado:** <t:${Math.floor(Date.now() / 1000)}:F>`
       )
       .setColor(0x2ECC71)
       .setThumbnail('https://i.imgur.com/57FMAF7.png')
       .addFields(
         {
           name: '💰 **Saldo Geral no Bot**',
-          value: `🪙 ${saldoTotalGuilda.toLocaleString()}`,
+          value: `🪙 ${saldoTotalMembros.toLocaleString()}`,
           inline: true
         },
         {
           name: '💸 **Arrecadação (Taxas)**',
-          value: `🪙 ${arrecadacaoTaxas.toLocaleString()} (${taxaAtual}%)`,
+          value: `🪙 ${arrecadacaoTaxas.toLocaleString()}`,
           inline: true
         },
         {
@@ -394,7 +398,7 @@ class ConfigHandler {
         },
         {
           name: '📊 **Patrimônio Líquido**',
-          value: `🪙 ${(saldoTotalGuilda - dividaTotal).toLocaleString()}`,
+          value: `🪙 ${patrimonioLiquido.toLocaleString()}`,
           inline: false
         }
       )
