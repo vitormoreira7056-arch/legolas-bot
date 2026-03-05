@@ -8,7 +8,6 @@ const EventStatsHandler = require('./eventStatsHandler');
 const db = require('../utils/database');
 
 class LootSplitHandler {
-  // 🆕 CORREÇÃO: Implementação completa do método loadSimulations
   static async loadSimulations() {
     console.log('[LOOTSPLIT] Carregando simulações salvas...');
     try {
@@ -17,12 +16,10 @@ class LootSplitHandler {
         const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
         let totalSimulacoes = 0;
         
-        // Contar simulações carregadas
         for (const guildId of Object.keys(dados)) {
           const eventos = dados[guildId];
           totalSimulacoes += Object.keys(eventos).length;
-          
-          // Verificar se há simulações pendentes (não pagas) e logar
+
           for (const [eventId, simulacao] of Object.entries(eventos)) {
             if (!simulacao.pago && !simulacao.finalizado) {
               console.log(`[LOOTSPLIT] Simulação pendente encontrada: ${eventId} (Guild: ${guildId})`);
@@ -39,7 +36,6 @@ class LootSplitHandler {
     }
   }
 
-  // 🆕 CORREÇÃO: Implementação completa do método archiveAndDeposit
   static async archiveAndDeposit(interaction, eventId) {
     console.log(`[LOOTSPLIT] Arquivando evento: ${eventId}`);
     
@@ -54,13 +50,11 @@ class LootSplitHandler {
       }
 
       if (simulacao.pago) {
-        // Se já foi pago, apenas arquiva
         await interaction.reply({
           content: '✅ Evento já foi pago e será arquivado.',
           ephemeral: true
         });
         
-        // Deletar canal após 3 segundos
         setTimeout(async () => {
           try {
             if (interaction.channel) {
@@ -74,7 +68,6 @@ class LootSplitHandler {
         return;
       }
 
-      // Se não foi pago, pergunta se deseja pagar ou apenas arquivar
       const embed = new EmbedBuilder()
         .setTitle('📦 **ARQUIVAMENTO DE EVENTO**')
         .setDescription(
@@ -365,7 +358,6 @@ class LootSplitHandler {
 
   static async handleResimular(interaction, eventId) {
     console.log(`[LOOTSPLIT] Re-simulando: ${eventId}`);
-    // Implementação para re-simular...
   }
 
   static async handleCancelarSplit(interaction, eventId) {
@@ -460,12 +452,29 @@ class LootSplitHandler {
         }
       }
 
+      // 🆕 CORREÇÃO: Buscar evento no Map E no arquivo de simulações
       const EventActions = require('./actions/eventActions');
-      const evento = EventActions.activeEvents.get(eventId);
+      let evento = EventActions.activeEvents.get(eventId);
+      
+      // Se não encontrou no Map, tenta carregar do arquivo
+      if (!evento) {
+        console.log(`[LOOTSPLIT] Evento não encontrado no Map, tentando carregar do arquivo...`);
+        const simulacaoSalva = await LootSplitCore.carregarSimulacao(interaction.guild.id, eventId);
+        
+        if (simulacaoSalva && simulacaoSalva.evento) {
+          // Reconstrói o objeto evento do arquivo
+          evento = {
+            ...simulacaoSalva.evento,
+            guildId: interaction.guild.id,
+            participacaoIndividual: new Map(simulacaoSalva.evento.participantes || [])
+          };
+          console.log(`[LOOTSPLIT] Evento carregado do arquivo: ${evento.nome}`);
+        }
+      }
 
       if (!evento) {
         return interaction.reply({
-          content: '❌ Evento não encontrado!',
+          content: '❌ Evento não encontrado! Verifique se o evento existe ou foi finalizado há muito tempo.',
           ephemeral: true
         });
       }
