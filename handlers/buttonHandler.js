@@ -114,7 +114,6 @@ class ButtonHandler {
         return;
       }
 
-      // 🆕 NOVO: Enviar para financeiro
       if (customId.startsWith('enviar_financeiro_')) {
         const eventId = customId.replace('enviar_financeiro_', '');
         await interaction.deferUpdate();
@@ -122,16 +121,27 @@ class ButtonHandler {
         return;
       }
 
-      // 🆕 NOVO: Confirmar pagamento no financeiro
+      // 🆕 CORREÇÃO: Extrair eventId e canalEventoId corretamente
       if (customId.startsWith('confirmar_split_financeiro_')) {
-        const parts = customId.replace('confirmar_split_financeiro_', '').split('_');
-        const eventId = parts[0];
-        const canalEventoId = parts[1];
+        // Formato: confirmar_split_financeiro_EVENTID_CANALID
+        // EventId pode conter underscores, então pegamos tudo antes do último underscore
+        const resto = customId.replace('confirmar_split_financeiro_', '');
+        const lastUnderscore = resto.lastIndexOf('_');
+        
+        if (lastUnderscore === -1) {
+          throw new Error('Formato de customId inválido');
+        }
+        
+        const eventId = resto.substring(0, lastUnderscore); // Tudo antes do último _
+        const canalEventoId = resto.substring(lastUnderscore + 1); // Tudo depois do último _
+        
+        console.log(`[BOTÃO] EventId extraído: ${eventId}`);
+        console.log(`[BOTÃO] CanalEventoId extraído: ${canalEventoId}`);
+        
         await LootSplitHandler.handleConfirmarSplitFinanceiro(interaction, eventId, canalEventoId);
         return;
       }
 
-      // 🆕 NOVO: Recusar no financeiro
       if (customId.startsWith('recusar_split_financeiro_')) {
         const eventId = customId.replace('recusar_split_financeiro_', '');
         await interaction.deferUpdate();
