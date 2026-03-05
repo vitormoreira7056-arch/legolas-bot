@@ -2,7 +2,7 @@ const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedB
 const EventHandler = require('../eventHandler');
 const EventModals = require('../eventModals');
 const LootSplitHandler = require('../lootSplitHandler');
-const LootSplitUI = require('../lootSplitUI'); // 🆕 ADICIONADO
+const LootSplitUI = require('../lootSplitUI');
 const EventStatsHandler = require('../eventStatsHandler');
 const EventEmbeds = require('../eventEmbeds');
 const db = require('../../utils/database');
@@ -570,26 +570,23 @@ class EventActions {
 
     try {
       console.log(`[UPDATE-PARTICIPACAO] Criando modal para evento: ${eventId}`);
+      
+      // 🆕 CORREÇÃO: Criar o modal diretamente aqui, não dependendo do LootSplitUI
+      const modal = new ModalBuilder()
+        .setCustomId(`modal_update_participation_${eventId}`)
+        .setTitle('📝 Atualizar Participação');
 
-      if (!LootSplitUI) {
-        console.error('[UPDATE-PARTICIPACAO] LootSplitUI não importado!');
-        return interaction.reply({
-          content: '❌ Erro interno: LootSplitUI não disponível.',
-          ephemeral: true
-        });
-      }
+      const dadosInput = new TextInputBuilder()
+        .setCustomId('dados_participacao')
+        .setLabel('Dados de participação')
+        .setPlaceholder('@usuario:01:30:00\n@outro:02:15:30')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setMaxLength(1000);
 
-      if (typeof LootSplitUI.createUpdateParticipationModal !== 'function') {
-        console.error('[UPDATE-PARTICIPACAO] createUpdateParticipationModal não é uma função!');
-        return interaction.reply({
-          content: '❌ Erro interno: Método de atualização indisponível.',
-          ephemeral: true
-        });
-      }
+      modal.addComponents(new ActionRowBuilder().addComponents(dadosInput));
 
-      const modal = LootSplitUI.createUpdateParticipationModal(eventId);
       await interaction.showModal(modal);
-
       console.log(`[UPDATE-PARTICIPACAO] Modal mostrado com sucesso!`);
 
     } catch (error) {
