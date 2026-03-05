@@ -147,10 +147,12 @@ class ConfigActions {
 
   static async handleConsultarSaldoDM(interaction) {
     const user = db.getUser(interaction.user.id);
+    const displayName = user.nickDoJogo || interaction.user.username;
+    const patente = db.getPatente(user.nivel);
 
     const embed = new EmbedBuilder()
       .setTitle('🏦 **SEU EXTRATO BANCÁRIO**')
-      .setDescription(`Extrato de ${interaction.user}`)
+      .setDescription(`Extrato de **${displayName}** ${user.nickDoJogo ? '(🎮 ' + interaction.user.username + ')' : ''}`)
       .setColor(0xF1C40F)
       .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
       .addFields(
@@ -158,8 +160,23 @@ class ConfigActions {
         { name: '💳 **Empréstimo Ativo**', value: `🪙 ${user.emprestimo.toLocaleString()}`, inline: true },
         { name: '💵 **Total Depositado**', value: `🪙 ${user.totalDepositado.toLocaleString()}`, inline: true },
         { name: '💸 **Total Sacado**', value: `🪙 ${user.totalSacado.toLocaleString()}`, inline: true }
-      )
-      .setFooter({ text: 'Sistema Bancário • Albion Guild' })
+      );
+
+    if (user.nickDoJogo) {
+      embed.addFields(
+        { name: '🎮 **Nick do Jogo**', value: user.nickDoJogo, inline: true },
+        { name: '⚔️ **Arma**', value: user.armaPrincipal || 'N/A', inline: true },
+        { name: '🏰 **Guilda**', value: user.guilda || 'N/A', inline: true }
+      );
+    }
+
+    const progresso = db.getProgressoXP(user);
+    embed.addFields(
+      { name: '⭐ **Nível**', value: `${patente.emoji} ${patente.nome} (Nv. ${user.nivel})`, inline: false },
+      { name: '📊 **XP**', value: `${progresso.barra}\n${progresso.xpAtual}/${progresso.xpNecessario} (${progresso.porcentagem}%)`, inline: false }
+    );
+
+    embed.setFooter({ text: 'Sistema Bancário • Albion Guild' })
       .setTimestamp();
 
     try {
@@ -212,7 +229,6 @@ class ConfigActions {
     await BankCore.rejectLoan(interaction, loanId);
   }
 
-  // Métodos para transferência de saldo
   static async handleTransferirSaldoButton(interaction) {
     const modal = new ModalBuilder()
       .setCustomId('modal_transferir_saldo')
@@ -275,7 +291,6 @@ class ConfigActions {
       });
     }
 
-    // Executar transferência
     remetente.saldo -= transferencia.valor;
     destinatario.saldo += transferencia.valor;
     transferencia.status = 'concluida';
@@ -295,20 +310,22 @@ class ConfigActions {
 
     global.transferenciasPendentes.delete(transferId);
 
+    const nickRemetente = remetente.nickDoJogo || `<@${transferencia.remetenteId}>`;
+    const nickDestinatario = destinatario.nickDoJogo || `<@${transferencia.destinatarioId}>`;
+
     await interaction.update({
-      content: `✅ **Transferência aceita!**\n💰 Você recebeu 🪙 ${transferencia.valor.toLocaleString()} de <@${transferencia.remetenteId}>`,
+      content: `✅ **Transferência aceita!**\n💰 Você recebeu 🪙 ${transferencia.valor.toLocaleString()} de **${nickRemetente}**`,
       embeds: [],
       components: []
     });
 
-    // Notificar remetente
     try {
       const remetenteUser = await interaction.client.users.fetch(transferencia.remetenteId);
       await remetenteUser.send({
         embeds: [
           new EmbedBuilder()
             .setTitle('✅ Transferência Concluída')
-            .setDescription(`> Seu envio de 🪙 ${transferencia.valor.toLocaleString()} para <@${transferencia.destinatarioId}> foi aceito!\n> Seu novo saldo: 🪙 ${remetente.saldo.toLocaleString()}`)
+            .setDescription(`> Seu envio de 🪙 ${transferencia.valor.toLocaleString()} para **${nickDestinatario}** foi aceito!\n> Seu novo saldo: 🪙 ${remetente.saldo.toLocaleString()}`)
             .setColor(0x57F287)
             .setTimestamp()
         ]
@@ -336,20 +353,25 @@ class ConfigActions {
     transferencia.status = 'recusada';
     global.transferenciasPendentes.delete(transferId);
 
+    const remetente = db.getUser(transferencia.remetenteId);
+    const nickRemetente = remetente.nickDoJogo || 'Usuário';
+
     await interaction.update({
-      content: `❌ **Transferência recusada!**\nVocê recusou o recebimento de 🪙 ${transferencia.valor.toLocaleString()} de <@${transferencia.remetenteId}>`,
+      content: `❌ **Transferência recusada!**\nVocê recusou o recebimento de 🪙 ${transferencia.valor.toLocaleString()} de **${nickRemetente}**`,
       embeds: [],
       components: []
     });
 
-    // Notificar remetente
     try {
       const remetenteUser = await interaction.client.users.fetch(transferencia.remetenteId);
+      const destinatario = db.getUser(transferencia.destinatarioId);
+      const nickDestinatario = destinatario.nickDoJogo || `<@${transferencia.destinatarioId}>`;
+      
       await remetenteUser.send({
         embeds: [
           new EmbedBuilder()
             .setTitle('❌ Transferência Recusada')
-            .setDescription(`> <@${interaction.user.id}> recusou seu envio de 🪙 ${transferencia.valor.toLocaleString()}`)
+            .setDescription(`> **${nickDestinatario}** recusou seu envio de 🪙 ${transferencia.valor.toLocaleString()}`)
             .setColor(0xED4245)
             .setTimestamp()
         ]
