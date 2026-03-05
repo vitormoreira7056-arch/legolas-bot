@@ -393,16 +393,34 @@ class EventActions {
 
     try {
       const voiceChannel = await interaction.guild.channels.fetch(event.voiceChannelId).catch(() => null);
+      
+      // 🆕 CORREÇÃO: Verificar se o canal existe antes de tentar mover
       const canalAguardando = interaction.guild.channels.cache.find(c => c.name === '🔊╠Aguardando-Evento');
-
+      
       if (voiceChannel && canalAguardando) {
+        console.log(`[EVENT] Movendo participantes para ${canalAguardando.name}...`);
         for (const userId of event.participantes) {
           try {
             const member = await interaction.guild.members.fetch(userId);
             if (member?.voice.channel?.id === event.voiceChannelId) {
               await member.voice.setChannel(canalAguardando.id);
             }
-          } catch {}
+          } catch (err) {
+            console.log(`[EVENT] Não foi possível mover ${userId}: ${err.message}`);
+          }
+        }
+      } else if (voiceChannel && !canalAguardando) {
+        console.log('[EVENT] Canal 🔊╠Aguardando-Evento não encontrado. Participantes não serão movidos.');
+        // Desconectar usuários do canal de voz do evento
+        for (const userId of event.participantes) {
+          try {
+            const member = await interaction.guild.members.fetch(userId);
+            if (member?.voice.channel?.id === event.voiceChannelId) {
+              await member.voice.disconnect('Evento finalizado - canal de destino não encontrado');
+            }
+          } catch (err) {
+            console.log(`[EVENT] Não foi possível desconectar ${userId}: ${err.message}`);
+          }
         }
       }
 
@@ -571,7 +589,6 @@ class EventActions {
     try {
       console.log(`[UPDATE-PARTICIPACAO] Criando modal para evento: ${eventId}`);
       
-      // 🆕 CORREÇÃO: Criar o modal diretamente aqui, não dependendo do LootSplitUI
       const modal = new ModalBuilder()
         .setCustomId(`modal_update_participation_${eventId}`)
         .setTitle('📝 Atualizar Participação');
