@@ -3,7 +3,7 @@ const EmbedUtils = require('../utils/embedUtils');
 const EventHandler = require('./eventHandler');
 const ConfigHandler = require('./configHandler');
 const LootSplitHandler = require('./lootSplitHandler');
-const BankHandler = require('./bank'); // Atualizado para novo path
+const BankHandler = require('./bank');
 const db = require('../utils/database');
 
 class ModalHandler {
@@ -47,7 +47,7 @@ class ModalHandler {
     const printInput = new TextInputBuilder()
       .setCustomId('reg_print')
       .setLabel('📊 Link do Print dos Atributos (Opcional)')
-      .setPlaceholder('https://imgur.com/... ou https://prnt.sc/... (deixe em branco se não tiver)')
+      .setPlaceholder('Use: imgur.com/upload | prnt.sc | postimages.org')
       .setStyle(TextInputStyle.Short)
       .setRequired(false)
       .setMaxLength(200);
@@ -85,8 +85,8 @@ class ModalHandler {
 
     const printInput = new TextInputBuilder()
       .setCustomId('venda_print')
-      .setLabel('📸 Link do Print (imgur, prnt.sc, etc)')
-      .setPlaceholder('https://imgur.com/... (opcional mas recomendado)')
+      .setLabel('📸 Link do Print do Baú (imgur, prnt.sc, etc)')
+      .setPlaceholder('imgur.com/upload | prnt.sc | postimages.org')
       .setStyle(TextInputStyle.Short)
       .setRequired(false)
       .setMaxLength(200);
@@ -142,7 +142,6 @@ class ModalHandler {
       return await this.processSacarSaldo(interaction);
     }
 
-    // 🆕 CORREÇÃO: Handler para modal de transferência
     if (interaction.customId === 'modal_transferir_saldo') {
       return await this.processTransferirSaldo(interaction);
     }
@@ -200,10 +199,10 @@ class ModalHandler {
         );
 
       if (printLink) {
-        embedFinanceiro.addFields({ 
-          name: '📸 **Print do Baú**', 
-          value: `[Clique para ver](${printLink})`, 
-          inline: false 
+        embedFinanceiro.addFields({
+          name: '📸 **Print do Baú**',
+          value: `[Clique para ver](${printLink})`,
+          inline: false
         });
       }
 
@@ -406,7 +405,6 @@ class ModalHandler {
     await BankHandler.requestWithdrawal(interaction, valor);
   }
 
-  // 🆕 CORREÇÃO: Método para processar transferência de saldo
   static async processTransferirSaldo(interaction) {
     const targetInput = interaction.fields.getTextInputValue('transfer_user');
     const valorInput = interaction.fields.getTextInputValue('transfer_valor');
@@ -419,10 +417,8 @@ class ModalHandler {
       });
     }
 
-    // Extrair ID se for menção
     let targetId = targetInput.replace(/[<@!>]/g, '');
 
-    // Verificar se é um ID válido
     if (!/^\d{17,19}$/.test(targetId)) {
       return interaction.reply({
         content: '❌ ID de usuário inválido! Use @menção ou ID numérico.',
