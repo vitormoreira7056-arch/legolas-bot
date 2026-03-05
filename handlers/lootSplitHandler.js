@@ -1,4 +1,4 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const LootSplitCore = require('./lootSplitCore');
 const LootSplitUI = require('./lootSplitUI');
 const EventActions = require('./actions/eventActions');
@@ -74,7 +74,9 @@ class LootSplitHandler {
       }
 
       const resultado = LootSplitCore.calcularDivisao(evento, valorTotal, valorReparo, ajustes);
-      await LootSplitCore.salvarSimulacao(evento, resultado, valorReparo);
+      
+      // 🆕 CORREÇÃO: Salvar simulação COM o canal do evento
+      await LootSplitCore.salvarSimulacao(evento, resultado, valorReparo, interaction.channelId);
 
       const embedResultado = LootSplitUI.createSimulationResultEmbed(evento, valorTotal, valorReparo, resultado);
 
@@ -141,6 +143,7 @@ class LootSplitHandler {
         });
       }
 
+      // 🆕 CORREÇÃO: Carregar simulação e verificar se tem canal salvo
       const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
       if (!simulacao) {
         return interaction.editReply({
@@ -148,6 +151,23 @@ class LootSplitHandler {
           embeds: [],
           components: []
         });
+      }
+
+      // 🆕 CORREÇÃO: Garantir que o canal do evento está salvo
+      const canalEventoId = interaction.channelId;
+      const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
+      
+      try {
+        const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
+        if (dados[interaction.guildId] && dados[interaction.guildId][eventId]) {
+          dados[interaction.guildId][eventId].canalEventoId = canalEventoId;
+          dados[interaction.guildId][eventId].canalEventoNome = interaction.channel.name;
+          dados[interaction.guildId][eventId].nomeEvento = evento.nome;
+          fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
+          console.log(`[LOOTSPLIT] Canal do evento salvo: ${canalEventoId} (${interaction.channel.name})`);
+        }
+      } catch (err) {
+        console.error('[LOOTSPLIT] Erro ao salvar canal do evento:', err);
       }
 
       const canalFinanceiro = interaction.guild.channels.cache.find(c => c.name === '📊╠financeiro');
@@ -165,7 +185,7 @@ class LootSplitHandler {
           `**Evento:** ${evento.nome}\n` +
           `**ID:** ${eventId}\n` +
           `**Solicitado por:** ${interaction.user}\n` +
-          `**Canal do Evento:** ${interaction.channel}\n\n` +
+          `**Canal do Evento:** <#${canalEventoId}>\n\n` +
           `Clique em **"Confirmar e Pagar"** para processar o pagamento aos participantes.`
         )
         .setColor(0xF39C12)
@@ -178,10 +198,11 @@ class LootSplitHandler {
         )
         .setTimestamp();
 
+      // 🆕 CORREÇÃO: Botão com referência clara ao canal do evento
       const botoesFinanceiro = new ActionRowBuilder()
         .addComponents(
           new ButtonBuilder()
-            .setCustomId(`confirmar_split_financeiro_${eventId}_${interaction.channelId}`)
+            .setCustomId(`confirmar_split_financeiro_${eventId}_${canalEventoId}`)
             .setLabel('✅ Confirmar e Pagar')
             .setStyle(ButtonStyle.Success),
           new ButtonBuilder()
@@ -190,19 +211,6 @@ class LootSplitHandler {
             .setStyle(ButtonStyle.Danger)
         );
 
-      // 🆕 CORREÇÃO: Salvar canalEventoId na simulação ANTES de enviar a mensagem
-      const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
-      try {
-        const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-        if (dados[interaction.guildId] && dados[interaction.guildId][eventId]) {
-          dados[interaction.guildId][eventId].canalEventoId = interaction.channelId;
-          fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
-          console.log(`[LOOTSPLIT] Canal do evento salvo: ${interaction.channelId}`);
-        }
-      } catch (err) {
-        console.error('[LOOTSPLIT] Erro ao salvar canal do evento:', err);
-      }
-
       await canalFinanceiro.send({
         content: `🔔 <@&${interaction.guild.roles.cache.find(r => r.name === 'Staff')?.id}> <@&${interaction.guild.roles.cache.find(r => r.name === 'ADM')?.id}> Nova solicitação de pagamento!`,
         embeds: [embedFinanceiro],
@@ -210,13 +218,9 @@ class LootSplitHandler {
       });
 
       await interaction.editReply({
-        content: `⏳ **Aguardando aprovação no financeiro...**\n📊 Solicitação enviada para ${canalFinanceiro}`,
+        content: `⏳ **Aguardando aprovação no financeiro...**\n📊 Solicitação enviada para ${canalFinanceiro}\n\n⚠️ O pagamento será processado e confirmado no canal <#${canalEventoId}>`,
         embeds: [],
         components: []
-      });
-
-      await interaction.channel.send({
-        content: `📊 **Solicitação de pagamento enviada para o financeiro!**\nAguardando aprovação de Staff/ADM...`
       });
 
     } catch (error) {
@@ -229,12 +233,9 @@ class LootSplitHandler {
     }
   }
 
-  // 🆕 CORREÇÃO: Confirmar pagamento vindo do canal financeiro (COM LOGS DE DEBUG)
+  // 🆕 MÉTODO CORRIGIDO: Confirmar pagamento e enviar painel para canal do evento
   static async handleConfirmarSplitFinanceiro(interaction, eventId, canalEventoId) {
-    console.log(`[DEBUG] Iniciando confirmação de pagamento`);
-    console.log(`[DEBUG] eventId: ${eventId}`);
-    console.log(`[DEBUG] canalEventoId: ${canalEventoId}`);
-    console.log(`[DEBUG] guildId: ${interaction.guildId}`);
+    console.log(`[LOOTSPLIT] Confirmação iniciada - Evento: ${eventId}, Canal: ${canalEventoId}`);
 
     const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
     const isStaff = interaction.member.roles.cache.some(r => r.name === 'Staff');
@@ -249,42 +250,18 @@ class LootSplitHandler {
     try {
       await interaction.deferUpdate();
 
-      // 🆕 TENTAR CARREGAR A SIMULAÇÃO COM LOGS
-      console.log(`[DEBUG] Tentando carregar simulação...`);
+      // Carregar simulação
       const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
       
-      console.log(`[DEBUG] Simulação carregada:`, simulacao ? 'SIM' : 'NÃO');
-      
       if (!simulacao) {
-        console.log(`[DEBUG] Simulação não encontrada para guildId: ${interaction.guildId}, eventId: ${eventId}`);
-        
-        // 🆕 CORREÇÃO ALTERNATIVA: Tentar buscar em todas as guilds se não encontrar
-        const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
-        if (fs.existsSync(arquivo)) {
-          const todosDados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-          console.log(`[DEBUG] Guilds disponíveis:`, Object.keys(todosDados));
-          
-          // Procurar em todas as guilds
-          for (const [gid, eventos] of Object.entries(todosDados)) {
-            if (eventos[eventId]) {
-              console.log(`[DEBUG] Evento encontrado na guild ${gid}`);
-              // Usar dados desta guild
-              const sim = eventos[eventId];
-              
-              // Processar com os dados encontrados
-              return await this.processarPagamentoComDados(interaction, eventId, canalEventoId, sim, gid);
-            }
-          }
-        }
-        
+        console.error(`[LOOTSPLIT] Simulação não encontrada: ${eventId}`);
         return interaction.editReply({
-          content: '❌ Simulação não encontrada! Verifique se o evento foi simulado corretamente.',
+          content: '❌ Simulação não encontrada! O evento pode já ter sido arquivado.',
           embeds: [],
           components: []
         });
       }
 
-      // Verificar se já foi pago
       if (simulacao.pago) {
         return interaction.editReply({
           content: '❌ Este split já foi pago anteriormente!',
@@ -293,53 +270,25 @@ class LootSplitHandler {
         });
       }
 
-      // Continuar com o processamento normal
-      await this.processarPagamentoComDados(interaction, eventId, canalEventoId, simulacao, interaction.guildId);
-
-    } catch (error) {
-      console.error('[LOOTSPLIT] Erro:', error);
-      await interaction.editReply({
-        content: `❌ Erro ao processar pagamento: ${error.message}`,
-        embeds: [],
-        components: []
-      });
-    }
-  }
-
-  // 🆕 NOVO: Método auxiliar para processar pagamento com dados carregados
-  static async processarPagamentoComDados(interaction, eventId, canalEventoId, simulacao, guildId) {
-    try {
-      console.log(`[DEBUG] Processando pagamento para evento ${eventId}`);
-
-      // Reconstruir objeto evento a partir dos dados da simulação
+      // Reconstruir evento
       const evento = {
         id: eventId,
         nome: simulacao.evento.nome,
-        guildId: guildId,
+        guildId: interaction.guildId,
         participacaoIndividual: new Map(simulacao.evento.participantes || [])
       };
 
-      console.log(`[DEBUG] Evento reconstruído: ${evento.nome}`);
-
       // Processar pagamentos
       const resultado = await LootSplitCore.finalizarSplit(evento, simulacao.resultado, interaction);
-
-      if (resultado.jaPago) {
-        return interaction.editReply({
-          content: '❌ Este split já foi pago!',
-          embeds: [],
-          components: []
-        });
-      }
-
+      
       if (!resultado.sucesso) {
         throw new Error('Falha ao processar pagamentos');
       }
 
-      // Atualizar mensagem no financeiro
-      const embedConfirmacao = new EmbedBuilder()
+      // 🆕 CORREÇÃO: Atualizar mensagem no financeiro primeiro
+      const embedConfirmacaoFinanceiro = new EmbedBuilder()
         .setTitle('✅ PAGAMENTO CONFIRMADO')
-        .setDescription(`Pagamento processado por ${interaction.user}`)
+        .setDescription(`Pagamento processado por ${interaction.user}\n\n📝 O recibo foi enviado para o canal do evento.`)
         .setColor(0x57F287)
         .addFields(
           { name: '💰 Total Distribuído', value: `🪙 ${simulacao.resultado.valorDistribuir.toLocaleString()}`, inline: true },
@@ -349,45 +298,124 @@ class LootSplitHandler {
 
       await interaction.editReply({
         content: `✅ **Pagamento confirmado e processado!**`,
-        embeds: [embedConfirmacao],
+        embeds: [embedConfirmacaoFinanceiro],
         components: []
       });
 
-      // NOTIFICAR CANAL DO EVENTO
+      // 🆕 CORREÇÃO: ENVIAR PAINEL PARA O CANAL DO EVENTO
       try {
-        const canalEvento = await interaction.guild.channels.fetch(canalEventoId);
-        if (canalEvento) {
-          const embedEvento = new EmbedBuilder()
-            .setTitle('✅ LOOTSPLIT PAGO!')
-            .setDescription(`O pagamento foi confirmado pela Staff/ADM ${interaction.user}`)
-            .setColor(0x57F287)
-            .addFields(
-              { name: '💰 Total', value: `🪙 ${simulacao.resultado.valorTotal.toLocaleString()}`, inline: true },
-              { name: '💸 Taxa', value: `🪙 ${simulacao.resultado.taxa.toLocaleString()}`, inline: true },
-              { name: '💎 Líquido', value: `🪙 ${simulacao.resultado.valorDistribuir.toLocaleString()}`, inline: true }
-            );
-
-          const botaoArquivar = new ActionRowBuilder()
-            .addComponents(
-              new ButtonBuilder()
-                .setCustomId(`arquivar_evento_${eventId}`)
-                .setLabel('📁 Arquivar Evento')
-                .setStyle(ButtonStyle.Success)
-            );
-
-          await canalEvento.send({
-            content: `🎉 **Pagamento do lootsplit confirmado!**`,
-            embeds: [embedEvento],
-            components: [botaoArquivar]
-          });
+        console.log(`[LOOTSPLIT] Tentando enviar painel para canal: ${canalEventoId}`);
+        
+        let canalEvento = null;
+        
+        // Tentar 1: Buscar pelo ID direto
+        try {
+          canalEvento = await interaction.guild.channels.fetch(canalEventoId);
+        } catch (e) {
+          console.log(`[LOOTSPLIT] Canal não encontrado pelo ID: ${canalEventoId}`);
         }
+
+        // Tentar 2: Se não encontrou, procurar na categoria EVENTOS ENCERRADOS
+        if (!canalEvento) {
+          console.log(`[LOOTSPLIT] Procurando canal na categoria EVENTOS ENCERRADOS...`);
+          
+          const categoriaEncerrados = interaction.guild.channels.cache.find(
+            c => c.name === 'EVENTOS ENCERRADOS' && c.type === ChannelType.GuildCategory
+          );
+
+          if (categoriaEncerrados) {
+            // Procurar canal pelo nome do evento
+            const nomeCanal = simulacao.evento.nome.toLowerCase().replace(/\s+/g, '-');
+            canalEvento = categoriaEncerrados.children.cache.find(
+              c => c.name.includes(nomeCanal) || c.name.includes(eventId.slice(-10))
+            );
+
+            // Se ainda não encontrou, pegar o primeiro canal na categoria (fallback)
+            if (!canalEvento) {
+              canalEvento = categoriaEncerrados.children.cache.first();
+            }
+          }
+        }
+
+        // Tentar 3: Procurar em todo o servidor por nome similar
+        if (!canalEvento) {
+          const nomeCanal = simulacao.evento.nome.toLowerCase();
+          canalEvento = interaction.guild.channels.cache.find(c => 
+            c.name.toLowerCase().includes(nomeCanal) || 
+            c.name.includes(eventId.slice(-10))
+          );
+        }
+
+        if (!canalEvento) {
+          throw new Error('Canal do evento não encontrado em nenhum local');
+        }
+
+        console.log(`[LOOTSPLIT] Canal encontrado: ${canalEvento.name} (${canalEvento.id})`);
+
+        // Verificar permissões
+        const permissoes = canalEvento.permissionsFor(interaction.guild.members.me);
+        if (!permissoes || !permissoes.has(PermissionFlagsBits.SendMessages)) {
+          throw new Error('Bot não tem permissão para enviar mensagens no canal do evento');
+        }
+
+        // Criar embed de confirmação para o canal do evento
+        const embedEvento = new EmbedBuilder()
+          .setTitle('✅ LOOTSPLIT PAGO E CONFIRMADO!')
+          .setDescription(
+            `🎉 **Pagamento processado com sucesso!**\n\n` +
+            `**Processado por:** ${interaction.user}\n` +
+            `**Data:** <t:${Math.floor(Date.now() / 1000)}:F>\n\n` +
+            `Todos os valores foram depositados automaticamente nas contas dos participantes.`
+          )
+          .setColor(0x57F287)
+          .addFields(
+            { name: '💰 Valor Total', value: `🪙 ${simulacao.resultado.valorTotal.toLocaleString()}`, inline: true },
+            { name: '🔧 Reparo', value: `🪙 ${simulacao.valorReparo.toLocaleString()}`, inline: true },
+            { name: '💸 Taxa Guilda', value: `🪙 ${simulacao.resultado.taxa.toLocaleString()} (${simulacao.resultado.taxaPercentual}%)`, inline: true },
+            { name: '💎 Líquido Distribuído', value: `🪙 ${simulacao.resultado.valorDistribuir.toLocaleString()}`, inline: true },
+            { name: '👥 Participantes', value: `${Object.keys(simulacao.resultado.distribuicao).length}`, inline: true },
+            { name: '✅ Status', value: 'PAGO', inline: true }
+          )
+          .setTimestamp();
+
+        // Criar botão de arquivar
+        const botaoArquivar = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`arquivar_evento_${eventId}`)
+              .setLabel('📁 Arquivar Evento')
+              .setStyle(ButtonStyle.Success)
+          );
+
+        // Enviar mensagem no canal do evento
+        const mensagemEvento = await canalEvento.send({
+          content: `🎉 **Pagamento do lootsplit confirmado e processado!**`,
+          embeds: [embedEvento],
+          components: [botaoArquivar]
+        });
+
+        console.log(`[LOOTSPLIT] Painel enviado com sucesso para ${canalEvento.name}: ${mensagemEvento.id}`);
+
       } catch (err) {
-        console.error('[LOOTSPLIT] Erro ao notificar canal do evento:', err);
+        console.error('[LOOTSPLIT] Erro ao enviar para canal do evento:', err);
+        
+        // Tentar enviar para o canal onde o botão foi clicado como fallback
+        try {
+          await interaction.channel.send({
+            content: `⚠️ **Não foi possível enviar a confirmação para o canal do evento (${canalEventoId}).**\n` +
+                    `Erro: ${err.message}\n\n` +
+                    `**Pagamento foi processado com sucesso!** Verifique o canal do evento manualmente.`
+          });
+        } catch {}
       }
 
     } catch (error) {
-      console.error('[LOOTSPLIT] Erro no processamento:', error);
-      throw error;
+      console.error('[LOOTSPLIT] Erro ao confirmar pagamento:', error);
+      await interaction.editReply({
+        content: `❌ Erro ao processar pagamento: ${error.message}`,
+        embeds: [],
+        components: []
+      });
     }
   }
 
