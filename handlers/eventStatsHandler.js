@@ -1,15 +1,15 @@
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, PermissionFlagsBits } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const db = require('../utils/database');
 
 class EventStatsHandler {
   static statsFile = path.join(__dirname, '..', 'data', 'eventStats.json');
   static messageIdFile = path.join(__dirname, '..', 'data', 'eventStatsMessage.json');
-  static eventsFile = path.join(__dirname, '..', 'data', 'eventStats.json'); // Arquivo com dados dos eventos
+  static eventsFile = path.join(__dirname, '..', 'data', 'eventStats.json');
 
-  // Estrutura: { userId: { events: [{eventId, date, name}], totalParticipated: 0 } }
   static stats = new Map();
-  static currentFilter = 'total'; // Filtro atual do painel
+  static currentFilter = 'total';
 
   static loadStats() {
     try {
@@ -55,21 +55,18 @@ class EventStatsHandler {
     return null;
   }
 
-  // 🆕 NOVO: Buscar estatísticas de um evento específico
   static getEventStats(guildId, eventId) {
     try {
-      // Verificar se temos o evento em algum lugar dos dados
       for (const [userId, userData] of this.stats.entries()) {
         const event = userData.events?.find(e => e.eventId === eventId);
         if (event) {
-          // Retornar estrutura compatível com o que o LootSplitHandler espera
           return {
             id: eventId,
             eventId: eventId,
             nome: event.name || 'Evento Desconhecido',
             name: event.name || 'Evento Desconhecido',
             guildId: guildId,
-            participantes: [], // Será preenchido se necessário
+            participantes: [],
             participacaoIndividual: new Map(),
             iniciadoEm: new Date(event.date).getTime(),
             finalizadoEm: new Date(event.date).getTime(),
@@ -78,8 +75,7 @@ class EventStatsHandler {
           };
         }
       }
-      
-      // Tentar carregar de arquivo de eventos detalhado se existir
+
       const eventsFile = path.join(__dirname, '..', 'data', 'events.json');
       if (fs.existsSync(eventsFile)) {
         const eventsData = JSON.parse(fs.readFileSync(eventsFile, 'utf8'));
@@ -87,7 +83,7 @@ class EventStatsHandler {
           return eventsData[eventId];
         }
       }
-      
+
       return null;
     } catch (error) {
       console.error('[EventStatsHandler] Erro ao buscar stats do evento:', error);
@@ -95,29 +91,67 @@ class EventStatsHandler {
     }
   }
 
-  // Registrar participação em evento
+  static async saveEventStats(evento, guild) {
+    try {
+      if (!evento.participantes || evento.participantes.length === 0) return;
+
+      for (const userId of evento.participantes) {
+        const userData = db.getUser(userId);
+        const nickDoJogo = userData.nickDoJogo || 'Desconhecido';
+        
+        if (!this.stats.has(userId)) {
+          this.stats.set(userId, { events: [], totalParticipated: 0 });
+        }
+
+        const stats = this.stats.get(userId);
+        
+        const alreadyRegistered = stats.events.some(e => e.eventId === evento.id);
+        if (alreadyRegistered) continue;
+
+        stats.events.push({
+          eventId: evento.id,
+          date: new Date().toISOString(),
+          name: evento.nome,
+          nickDoJogo: nickDoJogo
+        });
+        stats.totalParticipated = stats.events.length;
+        stats.nickDoJogo = nickDoJogo;
+      }
+
+      this.saveStats();
+      console.log(`[EventStats] Evento ${evento.nome} salvo com ${evento.participantes.length} participantes`);
+      
+      if (guild) {
+        await this.updatePanel(guild);
+      }
+    } catch (error) {
+      console.error('[EventStats] Erro ao salvar:', error);
+    }
+  }
+
   static registerEventParticipation(userId, eventId, eventName) {
     if (!this.stats.has(userId)) {
       this.stats.set(userId, { events: [], totalParticipated: 0 });
     }
 
     const userStats = this.stats.get(userId);
+    const userData = db.getUser(userId);
 
-    // Verificar se já registrou este evento específico
     const alreadyRegistered = userStats.events.some(e => e.eventId === eventId);
     if (alreadyRegistered) return;
 
     userStats.events.push({
       eventId,
       date: new Date().toISOString(),
-      name: eventName
+      name: eventName,
+      nickDoJogo: userData.nickDoJogo
     });
     userStats.totalParticipated = userStats.events.length;
+    userStats.nickDoJogo = userData.nickDoJogo;
 
     this.saveStats();
   }
 
-  // Calcular quantidade de eventos no período
   static getEventsInPeriod(userId, period) {
     const userStats = this.stats.get(userId);
     if (!userStats) return { participated: 0, total: this.getTotalEvents() };
@@ -140,17 +174,15 @@ class EventStatsHandler {
       return (now - eventDate) <= timeLimit;
     }).length;
 
-    // Total de eventos no período (todos os eventos criados no período)
     const totalInPeriod = this.getTotalEventsInPeriod(timeLimit);
 
     return {
       participated: participatedInPeriod,
-      total: totalInPeriod === 0 ? participatedInPeriod : totalInPeriod // Evitar divisão por zero
+      total: totalInPeriod === 0 ? participatedInPeriod : totalInPeriod
     };
   }
 
   static getTotalEvents() {
-    // Contar todos os eventos únicos já registrados
     const allEventIds = new Set();
     for (const userData of this.stats.values()) {
       userData.events.forEach(e => allEventIds.add(e.eventId));
@@ -211,7 +243,6 @@ class EventStatsHandler {
       .setFooter({ text: 'Atualizado automaticamente • Use o menu abaixo para filtrar' })
       .setTimestamp();
 
-    // Buscar todos os membros com cargos relevantes (NOTAG, Member Evento, Staff, etc.)
     const relevantRoles = ['NOTAG', 'Member Evento', 'Staff', 'ADM', 'Caller', 'ALIANÇA'];
     const trackedMembers = [];
 
@@ -219,28 +250,32 @@ class EventStatsHandler {
       const hasRelevantRole = member.roles.cache.some(r => relevantRoles.includes(r.name));
       if (hasRelevantRole && !member.user.bot) {
         const stats = this.getEventsInPeriod(member.id, filter);
+        const userData = db.getUser(member.id);
+        
         trackedMembers.push({
           member,
           participated: stats.participated,
           total: stats.total,
-          percentage: stats.total > 0 ? Math.round((stats.participated / stats.total) * 100) : 0
+          percentage: stats.total > 0 ? Math.round((stats.participated / stats.total) * 100) : 0,
+          nickDoJogo: userData.nickDoJogo
         });
       }
     }
 
-    // Ordenar por quantidade de eventos participados (decrescente)
     trackedMembers.sort((a, b) => b.participated - a.participated);
 
     if (trackedMembers.length === 0) {
       embed.addFields({ name: '👥 Membros', value: '*Nenhum membro registrado ainda*', inline: false });
     } else {
-      // Dividir em grupos de 20 para não ultrapassar limite de caracteres
       let currentField = '';
       let fieldCount = 0;
 
       for (let i = 0; i < trackedMembers.length; i++) {
         const tm = trackedMembers[i];
-        const line = `${i + 1}. ${tm.member.displayName}: **${tm.participated}/${tm.total}** (${tm.percentage}%)\n`;
+        const displayName = tm.nickDoJogo || tm.member.displayName;
+        const medalha = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+        
+        const line = `${medalha} **${displayName}**: **${tm.participated}/${tm.total}** (${tm.percentage}%)\n`;
 
         if ((currentField + line).length > 1024) {
           embed.addFields({
@@ -264,7 +299,6 @@ class EventStatsHandler {
       }
     }
 
-    // Estatísticas gerais
     const totalEvents = this.getTotalEventsInPeriod(
       filter === 'total' ? Infinity : {
         '7d': 7 * 24 * 60 * 60 * 1000,
@@ -285,7 +319,6 @@ class EventStatsHandler {
   }
 
   static async initializePanel(channel) {
-    // 🆕 CORREÇÃO: Verificar se canal existe antes de prosseguir
     if (!channel) {
       console.error('❌ Canal não fornecido para initializePanel');
       return;
@@ -321,7 +354,6 @@ class EventStatsHandler {
 
       const message = await channel.messages.fetch(saved.messageId).catch(() => null);
       if (!message) {
-        // Se mensagem foi deletada, recriar
         await this.initializePanel(channel);
         return;
       }
