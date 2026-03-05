@@ -5,6 +5,7 @@ const LootSplitHandler = require('../lootSplitHandler');
 const LootSplitUI = require('../lootSplitUI');
 const EventStatsHandler = require('../eventStatsHandler');
 const EventEmbeds = require('../eventEmbeds');
+const db = require('../../utils/database');
 
 class EventActions {
   constructor() {
@@ -128,10 +129,13 @@ class EventActions {
       return interaction.reply({ content: '❌ Vagas esgotadas!', ephemeral: true });
     }
 
+    const userData = db.getUser(interaction.user.id);
+    const nickDoJogo = userData.nickDoJogo || interaction.member.nickname || interaction.user.username;
+
     event.participantes.push(interaction.user.id);
     event.participacaoIndividual.set(interaction.user.id, {
       userId: interaction.user.id,
-      nickname: interaction.member.nickname || interaction.user.username,
+      nickname: nickDoJogo,
       tempos: [],
       tempoTotal: 0,
       entradaAtual: event.status === 'em_andamento' ? Date.now() : null
@@ -174,9 +178,13 @@ class EventActions {
     for (const userId of event.participantes) {
       if (!event.participacaoIndividual.has(userId)) {
         const member = await interaction.guild.members.fetch(userId).catch(() => null);
+        
+        const userData = db.getUser(userId);
+        const nickDoJogo = userData.nickDoJogo || member?.nickname || member?.user?.username || 'Desconhecido';
+        
         event.participacaoIndividual.set(userId, {
           userId: userId,
-          nickname: member?.nickname || member?.user?.username || 'Desconhecido',
+          nickname: nickDoJogo,
           tempos: [],
           tempoTotal: 0,
           entradaAtual: Date.now()
@@ -463,45 +471,45 @@ class EventActions {
 
   static async handleSimulateLoot(interaction, eventId) {
     console.log(`[EVENTACTIONS] Iniciando handleSimulateLoot para ${eventId}`);
-    
+
     try {
       if (!LootSplitUI) {
         console.error('[EVENTACTIONS] LootSplitUI não importado!');
-        return interaction.followUp({ 
-          content: '❌ Erro interno: LootSplitUI não disponível.', 
-          ephemeral: true 
+        return interaction.followUp({
+          content: '❌ Erro interno: LootSplitUI não disponível.',
+          ephemeral: true
         });
       }
 
       if (typeof LootSplitUI.createSimulationModal !== 'function') {
         console.error('[EVENTACTIONS] createSimulationModal não é uma função!');
-        return interaction.followUp({ 
-          content: '❌ Erro interno: Método de simulação indisponível.', 
-          ephemeral: true 
+        return interaction.followUp({
+          content: '❌ Erro interno: Método de simulação indisponível.',
+          ephemeral: true
         });
       }
 
       console.log(`[EVENTACTIONS] Criando modal...`);
       const modal = LootSplitUI.createSimulationModal(eventId);
-      
+
       console.log(`[EVENTACTIONS] Mostrando modal...`);
       await interaction.showModal(modal);
-      
+
       console.log(`[EVENTACTIONS] Modal mostrado com sucesso!`);
 
     } catch (error) {
       console.error('[EVENTACTIONS] Erro ao mostrar modal:', error);
-      
+
       try {
         if (interaction.deferred) {
-          await interaction.followUp({ 
-            content: `❌ Erro ao abrir simulação: ${error.message}`, 
-            ephemeral: true 
+          await interaction.followUp({
+            content: `❌ Erro ao abrir simulação: ${error.message}`,
+            ephemeral: true
           });
         } else {
-          await interaction.reply({ 
-            content: `❌ Erro ao abrir simulação: ${error.message}`, 
-            ephemeral: true 
+          await interaction.reply({
+            content: `❌ Erro ao abrir simulação: ${error.message}`,
+            ephemeral: true
           });
         }
       } catch (replyError) {
@@ -512,25 +520,25 @@ class EventActions {
 
   static async handleResimulateLoot(interaction, eventId) {
     console.log(`[EVENTACTIONS] Re-simulando para ${eventId}`);
-    
+
     try {
       if (!LootSplitUI || typeof LootSplitUI.createSimulationModal !== 'function') {
-        return interaction.followUp({ 
-          content: '❌ Erro interno.', 
-          ephemeral: true 
+        return interaction.followUp({
+          content: '❌ Erro interno.',
+          ephemeral: true
         });
       }
-      
+
       const modal = LootSplitUI.createSimulationModal(eventId);
       await interaction.showModal(modal);
     } catch (error) {
       console.error('[EVENTACTIONS] Erro ao reabrir modal:', error);
-      
+
       try {
         if (interaction.deferred) {
-          await interaction.followUp({ 
-            content: `❌ Erro: ${error.message}`, 
-            ephemeral: true 
+          await interaction.followUp({
+            content: `❌ Erro: ${error.message}`,
+            ephemeral: true
           });
         }
       } catch {}
@@ -559,19 +567,19 @@ class EventActions {
 
     try {
       if (!LootSplitUI || typeof LootSplitUI.createUpdateParticipationModal !== 'function') {
-        return interaction.reply({ 
-          content: '❌ Erro interno.', 
-          ephemeral: true 
+        return interaction.reply({
+          content: '❌ Erro interno.',
+          ephemeral: true
         });
       }
-      
+
       const modal = LootSplitUI.createUpdateParticipationModal(eventId);
       await interaction.showModal(modal);
     } catch (error) {
       console.error('[EVENTACTIONS] Erro ao mostrar modal de atualização:', error);
-      await interaction.reply({ 
-        content: '❌ Erro ao abrir atualização.', 
-        ephemeral: true 
+      await interaction.reply({
+        content: '❌ Erro ao abrir atualização.',
+        ephemeral: true
       });
     }
   }
