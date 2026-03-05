@@ -23,10 +23,23 @@ class RegistrationActions {
 
     // 🆕 CORREÇÃO: O customId é apenas 'aprovar_userId', não 'aprovar_tipo_userId'
     const userId = customId.replace('aprovar_', '');
+
+    // 🆕 CORREÇÃO: Busca dinâmica do cargo padrão (NOTAG ou primeiro cargo configurável)
+    // Prioridade: 1. Cargo NOTAG, 2. Cargo Membro, 3. Primeiro cargo encontrado (exceto @everyone)
+    let cargoNome = 'NOTAG';
+    let role = interaction.guild.roles.cache.find(r => r.name === 'NOTAG');
     
-    // 🆕 Padrão: Aprovar como NOTAG por padrão, ou pode ser modificado para detectar tipo
-    const cargoNome = 'NOTAG';
+    if (!role) {
+      role = interaction.guild.roles.cache.find(r => r.name === 'Membro');
+      if (role) cargoNome = 'Membro';
+    }
     
+    if (!role) {
+      // Fallback: pega o primeiro cargo que não seja @everyone
+      role = interaction.guild.roles.cache.find(r => r.name !== '@everyone' && !r.managed);
+      if (role) cargoNome = role.name;
+    }
+
     const guild = interaction.guild;
     const targetMember = await guild.members.fetch(userId).catch(() => null);
 
@@ -38,10 +51,9 @@ class RegistrationActions {
     }
 
     try {
-      const role = guild.roles.cache.find(r => r.name === cargoNome);
       if (!role) {
         return interaction.reply({
-          content: `❌ Cargo ${cargoNome} não encontrado!`,
+          content: `❌ Nenhum cargo padrão encontrado (NOTAG ou Membro)! Configure o servidor primeiro.`,
           ephemeral: true
         });
       }
