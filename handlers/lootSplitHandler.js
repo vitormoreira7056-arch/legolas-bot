@@ -2,6 +2,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const fs = require('fs');
 const path = require('path');
 const LootSplitCore = require('./lootSplitCore');
+const LootSplitUI = require('./lootSplitUI'); // 🆕 ADICIONADO
 const ConfigHandler = require('./configHandler');
 const EventStatsHandler = require('./eventStatsHandler');
 const db = require('../utils/database');
@@ -19,11 +20,10 @@ class LootSplitHandler {
 
   static async enviarParaFinanceiro(interaction, eventId) {
     console.log(`[LOOTSPLIT] Enviando para financeiro: ${eventId}`);
-    
+
     try {
-      // Carregar simulação
       const simulacao = await LootSplitCore.carregarSimulacao(interaction.guild.id, eventId);
-      
+
       if (!simulacao) {
         console.error(`[LOOTSPLIT] Simulação não encontrada: ${eventId}`);
         return interaction.followUp({
@@ -32,7 +32,6 @@ class LootSplitHandler {
         });
       }
 
-      // Buscar canal financeiro
       const financeiroChannel = interaction.guild.channels.cache.find(c => c.name === '📊╠financeiro');
       if (!financeiroChannel) {
         return interaction.followUp({
@@ -41,7 +40,6 @@ class LootSplitHandler {
         });
       }
 
-      // Verificar permissões
       const isStaff = interaction.member.roles.cache.some(r => r.name === 'Staff' || r.name === 'ADM');
       if (!isStaff) {
         return interaction.followUp({
@@ -50,7 +48,6 @@ class LootSplitHandler {
         });
       }
 
-      // Criar embed de confirmação
       const embed = new EmbedBuilder()
         .setTitle('💰 **CONFIRMAÇÃO DE PAGAMENTO**')
         .setDescription(`Evento: **${simulacao.evento.nome}**`)
@@ -62,7 +59,6 @@ class LootSplitHandler {
         )
         .setFooter({ text: 'Aguardando confirmação do pagamento' });
 
-      // Botões de confirmação
       const buttons = new ActionRowBuilder()
         .addComponents(
           new ButtonBuilder()
@@ -97,12 +93,11 @@ class LootSplitHandler {
 
   static async handleConfirmarSplitFinanceiro(interaction, eventId, canalEventoId) {
     console.log(`[LOOTSPLIT] Confirmando pagamento: ${eventId}`);
-    
+
     try {
       await interaction.deferUpdate();
 
-      // Verificar se é Staff ou ADM
-      const isStaff = interaction.member.roles.cache.some(r => 
+      const isStaff = interaction.member.roles.cache.some(r =>
         r.name === 'Staff' || r.name === 'ADM'
       );
 
@@ -114,9 +109,8 @@ class LootSplitHandler {
         });
       }
 
-      // Buscar simulação
       const simulacao = await LootSplitCore.carregarSimulacao(interaction.guild.id, eventId);
-      
+
       if (!simulacao) {
         console.error(`[LOOTSPLIT] Simulação não encontrada: ${eventId}`);
         return interaction.editReply({
@@ -126,7 +120,6 @@ class LootSplitHandler {
         });
       }
 
-      // Verificar se já foi pago
       if (simulacao.pago) {
         return interaction.editReply({
           content: '❌ Este pagamento já foi processado!',
@@ -135,7 +128,6 @@ class LootSplitHandler {
         });
       }
 
-      // Realizar pagamentos
       const resultado = await LootSplitCore.finalizarSplit(
         simulacao.evento,
         simulacao.resultado,
@@ -143,14 +135,12 @@ class LootSplitHandler {
       );
 
       if (resultado.sucesso) {
-        // Atualizar mensagem
         await interaction.editReply({
           content: `✅ **Pagamento confirmado por ${interaction.user}**\n💰 ${resultado.pagamentos.length} participantes pagos!`,
           embeds: [],
           components: []
         });
 
-        // Enviar botão de arquivar para o canal do evento
         await this.enviarBotaoArquivar(interaction, eventId, canalEventoId);
 
       } else if (resultado.jaPago) {
@@ -180,10 +170,9 @@ class LootSplitHandler {
   static async enviarBotaoArquivar(interaction, eventId, canalEventoId) {
     try {
       console.log(`[LOOTSPLIT] Enviando botão arquivar para canal: ${canalEventoId}`);
-      
+
       let canalEvento = null;
-      
-      // Tentar buscar pelo ID salvo
+
       if (canalEventoId) {
         try {
           canalEvento = await interaction.guild.channels.fetch(canalEventoId);
@@ -192,7 +181,6 @@ class LootSplitHandler {
         }
       }
 
-      // Se não encontrar, procurar na categoria EVENTOS ENCERRADOS
       if (!canalEvento) {
         const categoriaEncerrados = interaction.guild.channels.cache.find(
           c => c.name === '📁 EVENTOS ENCERRADOS' && c.type === 4
@@ -209,7 +197,6 @@ class LootSplitHandler {
         return;
       }
 
-      // Verificar permissões
       const botMember = interaction.guild.members.cache.get(interaction.client.user.id);
       if (!canalEvento.permissionsFor(botMember).has(['ViewChannel', 'SendMessages'])) {
         console.error(`[LOOTSPLIT] Sem permissão no canal ${canalEvento.name}`);
@@ -243,7 +230,7 @@ class LootSplitHandler {
 
   static async handleArquivarEvento(interaction, eventId) {
     console.log(`[LOOTSPLIT] Arquivando evento: ${eventId}`);
-    
+
     try {
       const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
       const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
@@ -256,7 +243,6 @@ class LootSplitHandler {
         });
       }
 
-      // Deletar canal após 5 segundos
       setTimeout(async () => {
         try {
           await interaction.channel.delete('Evento arquivado');
@@ -295,17 +281,15 @@ class LootSplitHandler {
     });
   }
 
-  // 🆕 NOVO: Processar atualização de participação do modal
   static async processUpdateParticipation(interaction, eventId) {
     console.log(`[LOOTSPLIT] Processando atualização de participação: ${eventId}`);
-    
+
     try {
       const dadosInput = interaction.fields.getTextInputValue('dados_participacao');
-      
-      // Parse dos dados (formato: @user:HH:MM:SS)
+
       const linhas = dadosInput.split('\n');
       const atualizacoes = [];
-      
+
       for (const linha of linhas) {
         const match = linha.match(/<@!?(\d+)>\s*[:=]?\s*(\d+):(\d+):(\d+)/);
         if (match) {
@@ -313,9 +297,9 @@ class LootSplitHandler {
           const horas = parseInt(match[2]);
           const minutos = parseInt(match[3]);
           const segundos = parseInt(match[4]);
-          
+
           const tempoMs = ((horas * 60 + minutos) * 60 + segundos) * 1000;
-          
+
           atualizacoes.push({
             userId,
             tempoMs,
@@ -331,9 +315,6 @@ class LootSplitHandler {
         });
       }
 
-      // Aqui você pode atualizar os dados do evento
-      // Por exemplo, salvar em um arquivo ou atualizar no banco de dados
-      
       await interaction.reply({
         embeds: [
           new EmbedBuilder()
@@ -357,10 +338,9 @@ class LootSplitHandler {
     }
   }
 
-  // 🆕 NOVO: Processar simulação do modal
   static async processSimulation(interaction, eventId) {
     console.log(`[LOOTSPLIT] Processando simulação: ${eventId}`);
-    
+
     try {
       const valorTotal = parseInt(interaction.fields.getTextInputValue('valor_total'));
       const valorReparo = parseInt(interaction.fields.getTextInputValue('valor_reparo') || '0');
@@ -373,7 +353,6 @@ class LootSplitHandler {
         });
       }
 
-      // Parse ajustes
       const ajustes = {};
       if (ajustesRaw) {
         const linhas = ajustesRaw.split('\n');
@@ -385,10 +364,9 @@ class LootSplitHandler {
         }
       }
 
-      // Buscar dados do evento
-      const EventActions = require('./eventActions');
+      const EventActions = require('./actions/eventActions');
       const evento = EventActions.activeEvents.get(eventId);
-      
+
       if (!evento) {
         return interaction.reply({
           content: '❌ Evento não encontrado!',
@@ -396,16 +374,12 @@ class LootSplitHandler {
         });
       }
 
-      // Calcular divisão
       const resultado = LootSplitCore.calcularDivisao(evento, valorTotal, valorReparo, ajustes);
 
-      // Salvar simulação
       await LootSplitCore.salvarSimulacao(evento, resultado, valorReparo, interaction.channel.id);
 
-      // Criar embed de resultado
       const embed = LootSplitUI.createSimulationResultEmbed(evento, valorTotal, valorReparo, resultado);
 
-      // Botões de ação
       const buttons = new ActionRowBuilder()
         .addComponents(
           new ButtonBuilder()
