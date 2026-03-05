@@ -3,14 +3,14 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 class EmbedUtils {
   // Cores modernas
   static colors = {
-    primary: 0x5865F2,    // Discord Blurple
-    success: 0x57F287,    // Verde
-    danger: 0xED4245,     // Vermelho
-    warning: 0xFEE75C,    // Amarelo
-    info: 0x5865F2,       // Info
-    dark: 0x2C2F33,       // Escuro
-    gold: 0xF1C40F,       // Dourado
-    event: 0xE74C3C       // Eventos
+    primary: 0x5865F2, // Discord Blurple
+    success: 0x57F287, // Verde
+    danger: 0xED4245, // Vermelho
+    warning: 0xFEE75C, // Amarelo
+    info: 0x5865F2, // Info
+    dark: 0x2C2F33, // Escuro
+    gold: 0xF1C40F, // Dourado
+    event: 0xE74C3C // Eventos
   };
 
   // ========== REGISTRO ==========
@@ -32,14 +32,18 @@ class EmbedUtils {
         'Arma/Spec: Sua especialização\n' +
         'Print: Link da foto dos atributos (OPCIONAL)\n' +
         '```\n\n' +
+        '📸 **Como enviar prints?**\n' +
+        '• Upload sua imagem em: https://imgur.com/upload\n' +
+        '• Ou use: https://prnt.sc/ (Lightshot)\n' +
+        '• Ou: https://postimages.org/\n\n' +
         '*Clique no botão abaixo para iniciar seu registro*'
       )
       .setColor(this.colors.primary)
-      .setImage('https://i.imgur.com/8N1WvGK.png')
+      .setImage('png/recrutamento.png') // 🆕 CAMINHO LOCAL DA IMAGEM
       .setThumbnail('https://i.imgur.com/JRX6b0G.png')
-      .setFooter({ 
-        text: 'Sistema de Recrutamento • Albion Guild', 
-        iconURL: 'https://i.imgur.com/JRX6b0G.png' 
+      .setFooter({
+        text: 'Sistema de Recrutamento • Albion Guild',
+        iconURL: 'https://i.imgur.com/JRX6b0G.png'
       })
       .setTimestamp();
   }
@@ -62,47 +66,47 @@ class EmbedUtils {
       .setColor(this.colors.warning)
       .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
       .addFields(
-        { 
-          name: '👤 **Nickname**', 
-          value: `\`\`\`${userData.nickname}\`\`\``, 
-          inline: true 
+        {
+          name: '👤 **Nickname**',
+          value: `\`\`\`${userData.nickname}\`\`\``,
+          inline: true
         },
-        { 
-          name: '🏰 **Guilda Atual/Antiga**', 
-          value: `\`\`\`${userData.guilda}\`\`\``, 
-          inline: true 
+        {
+          name: '🏰 **Guilda Atual/Antiga**',
+          value: `\`\`\`${userData.guilda}\`\`\``,
+          inline: true
         },
-        { 
-          name: '💻 **Plataforma**', 
-          value: `\`\`\`${userData.plataforma}\`\`\``, 
-          inline: true 
+        {
+          name: '💻 **Plataforma**',
+          value: `\`\`\`${userData.plataforma}\`\`\``,
+          inline: true
         },
-        { 
-          name: '⚔️ **Arma/Spec Principal**', 
-          value: `\`\`\`${userData.arma}\`\`\``, 
-          inline: false 
+        {
+          name: '⚔️ **Arma/Spec Principal**',
+          value: `\`\`\`${userData.arma}\`\`\``,
+          inline: false
         },
-        { 
-          name: '📊 **Print dos Atributos**', 
-          value: userData.printLink !== 'Não fornecido' 
-            ? `[Clique para ver](${userData.printLink})` 
-            : '*Não fornecido*', 
-          inline: false 
+        {
+          name: '📊 **Print dos Atributos**',
+          value: userData.printLink !== 'Não fornecido'
+            ? `[Clique para ver](${userData.printLink})`
+            : '*Não fornecido*',
+          inline: false
         },
-        { 
-          name: '🆔 **ID do Usuário**', 
-          value: `\`${member.id}\``, 
-          inline: true 
+        {
+          name: '🆔 **ID do Usuário**',
+          value: `\`${member.id}\``,
+          inline: true
         },
-        { 
-          name: '📅 **Data**', 
-          value: `<t:${Math.floor(Date.now() / 1000)}:F>`, 
-          inline: true 
+        {
+          name: '📅 **Data**',
+          value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
+          inline: true
         }
       )
-      .setFooter({ 
-        text: 'Aguardando aprovação da staff', 
-        iconURL: 'https://i.imgur.com/8N1WvGK.png' 
+      .setFooter({
+        text: 'Aguardando aprovação da staff',
+        iconURL: 'https://i.imgur.com/8N1WvGK.png'
       })
       .setTimestamp();
 
@@ -113,20 +117,10 @@ class EmbedUtils {
     return new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
-          .setCustomId(`aprovar_notag_${userId}`)
-          .setLabel('NOTAG')
+          .setCustomId(`aprovar_${userId}`)
+          .setLabel('Aprovar')
           .setStyle(ButtonStyle.Success)
-          .setEmoji('🛡️'),
-        new ButtonBuilder()
-          .setCustomId(`aprovar_evento_${userId}`)
-          .setLabel('Member Event')
-          .setStyle(ButtonStyle.Primary)
-          .setEmoji('🎉'),
-        new ButtonBuilder()
-          .setCustomId(`aprovar_alianca_${userId}`)
-          .setLabel('Aliança')
-          .setStyle(ButtonStyle.Secondary)
-          .setEmoji('🤝'),
+          .setEmoji('✅'),
         new ButtonBuilder()
           .setCustomId(`recusar_${userId}`)
           .setLabel('Recusar')
