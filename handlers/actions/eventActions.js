@@ -2,7 +2,7 @@ const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedB
 const EventHandler = require('../eventHandler');
 const EventModals = require('../eventModals');
 const LootSplitHandler = require('../lootSplitHandler');
-const LootSplitUI = require('../lootSplitUI');
+const LootSplitUI = require('../lootSplitUI'); // 🆕 ADICIONADO
 const EventStatsHandler = require('../eventStatsHandler');
 const EventEmbeds = require('../eventEmbeds');
 const db = require('../../utils/database');
@@ -178,10 +178,10 @@ class EventActions {
     for (const userId of event.participantes) {
       if (!event.participacaoIndividual.has(userId)) {
         const member = await interaction.guild.members.fetch(userId).catch(() => null);
-        
+
         const userData = db.getUser(userId);
         const nickDoJogo = userData.nickDoJogo || member?.nickname || member?.user?.username || 'Desconhecido';
-        
+
         event.participacaoIndividual.set(userId, {
           userId: userId,
           nickname: nickDoJogo,
@@ -557,22 +557,20 @@ class EventActions {
     await EventStatsHandler.updatePanel(interaction.guild);
   }
 
-  // 🆕 CORREÇÃO: Método handleUpdateParticipation corrigido
   static async handleUpdateParticipation(interaction, eventId) {
     const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
     const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
 
     if (!isADM && !isCaller) {
-      return interaction.reply({ 
+      return interaction.reply({
         content: '❌ Apenas ADMs ou Callers podem atualizar participações!',
-        ephemeral: true 
+        ephemeral: true
       });
     }
 
     try {
       console.log(`[UPDATE-PARTICIPACAO] Criando modal para evento: ${eventId}`);
-      
-      // Verificar se LootSplitUI está disponível
+
       if (!LootSplitUI) {
         console.error('[UPDATE-PARTICIPACAO] LootSplitUI não importado!');
         return interaction.reply({
@@ -591,12 +589,12 @@ class EventActions {
 
       const modal = LootSplitUI.createUpdateParticipationModal(eventId);
       await interaction.showModal(modal);
-      
+
       console.log(`[UPDATE-PARTICIPACAO] Modal mostrado com sucesso!`);
 
     } catch (error) {
       console.error('[UPDATE-PARTICIPACAO] Erro ao mostrar modal:', error);
-      
+
       try {
         if (!interaction.replied && !interaction.deferred) {
           await interaction.reply({
