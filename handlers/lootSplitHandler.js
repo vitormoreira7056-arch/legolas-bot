@@ -190,11 +190,17 @@ class LootSplitHandler {
             .setStyle(ButtonStyle.Danger)
         );
 
+      // 🆕 CORREÇÃO: Salvar canalEventoId na simulação ANTES de enviar a mensagem
       const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
-      const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-      if (dados[interaction.guildId] && dados[interaction.guildId][eventId]) {
-        dados[interaction.guildId][eventId].canalEventoId = interaction.channelId;
-        fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
+      try {
+        const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
+        if (dados[interaction.guildId] && dados[interaction.guildId][eventId]) {
+          dados[interaction.guildId][eventId].canalEventoId = interaction.channelId;
+          fs.writeFileSync(arquivo, JSON.stringify(dados, null, 2));
+          console.log(`[LOOTSPLIT] Canal do evento salvo: ${interaction.channelId}`);
+        }
+      } catch (err) {
+        console.error('[LOOTSPLIT] Erro ao salvar canal do evento:', err);
       }
 
       await canalFinanceiro.send({
@@ -223,7 +229,13 @@ class LootSplitHandler {
     }
   }
 
+  // 🆕 CORREÇÃO: Confirmar pagamento vindo do canal financeiro (COM LOGS DE DEBUG)
   static async handleConfirmarSplitFinanceiro(interaction, eventId, canalEventoId) {
+    console.log(`[DEBUG] Iniciando confirmação de pagamento`);
+    console.log(`[DEBUG] eventId: ${eventId}`);
+    console.log(`[DEBUG] canalEventoId: ${canalEventoId}`);
+    console.log(`[DEBUG] guildId: ${interaction.guildId}`);
+
     const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
     const isStaff = interaction.member.roles.cache.some(r => r.name === 'Staff');
 
@@ -237,15 +249,42 @@ class LootSplitHandler {
     try {
       await interaction.deferUpdate();
 
+      // 🆕 TENTAR CARREGAR A SIMULAÇÃO COM LOGS
+      console.log(`[DEBUG] Tentando carregar simulação...`);
       const simulacao = await LootSplitCore.carregarSimulacao(interaction.guildId, eventId);
+      
+      console.log(`[DEBUG] Simulação carregada:`, simulacao ? 'SIM' : 'NÃO');
+      
       if (!simulacao) {
+        console.log(`[DEBUG] Simulação não encontrada para guildId: ${interaction.guildId}, eventId: ${eventId}`);
+        
+        // 🆕 CORREÇÃO ALTERNATIVA: Tentar buscar em todas as guilds se não encontrar
+        const arquivo = path.join(__dirname, '..', 'data', 'lootsplits.json');
+        if (fs.existsSync(arquivo)) {
+          const todosDados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
+          console.log(`[DEBUG] Guilds disponíveis:`, Object.keys(todosDados));
+          
+          // Procurar em todas as guilds
+          for (const [gid, eventos] of Object.entries(todosDados)) {
+            if (eventos[eventId]) {
+              console.log(`[DEBUG] Evento encontrado na guild ${gid}`);
+              // Usar dados desta guild
+              const sim = eventos[eventId];
+              
+              // Processar com os dados encontrados
+              return await this.processarPagamentoComDados(interaction, eventId, canalEventoId, sim, gid);
+            }
+          }
+        }
+        
         return interaction.editReply({
-          content: '❌ Simulação não encontrada! O evento pode já ter sido arquivado.',
+          content: '❌ Simulação não encontrada! Verifique se o evento foi simulado corretamente.',
           embeds: [],
           components: []
         });
       }
 
+      // Verificar se já foi pago
       if (simulacao.pago) {
         return interaction.editReply({
           content: '❌ Este split já foi pago anteriormente!',
@@ -254,19 +293,35 @@ class LootSplitHandler {
         });
       }
 
-      let evento = EventActions.activeEvents.get(eventId);
-      
-      if (!evento) {
-        evento = {
-          id: eventId,
-          nome: simulacao.evento.nome,
-          guildId: simulacao.evento.guildId,
-          participacaoIndividual: new Map(simulacao.evento.participantes || [])
-        };
-      }
+      // Continuar com o processamento normal
+      await this.processarPagamentoComDados(interaction, eventId, canalEventoId, simulacao, interaction.guildId);
 
-      console.log(`[LOOTSPLIT] Processando pagamento para evento ${eventId} (${evento.nome})`);
+    } catch (error) {
+      console.error('[LOOTSPLIT] Erro:', error);
+      await interaction.editReply({
+        content: `❌ Erro ao processar pagamento: ${error.message}`,
+        embeds: [],
+        components: []
+      });
+    }
+  }
 
+  // 🆕 NOVO: Método auxiliar para processar pagamento com dados carregados
+  static async processarPagamentoComDados(interaction, eventId, canalEventoId, simulacao, guildId) {
+    try {
+      console.log(`[DEBUG] Processando pagamento para evento ${eventId}`);
+
+      // Reconstruir objeto evento a partir dos dados da simulação
+      const evento = {
+        id: eventId,
+        nome: simulacao.evento.nome,
+        guildId: guildId,
+        participacaoIndividual: new Map(simulacao.evento.participantes || [])
+      };
+
+      console.log(`[DEBUG] Evento reconstruído: ${evento.nome}`);
+
+      // Processar pagamentos
       const resultado = await LootSplitCore.finalizarSplit(evento, simulacao.resultado, interaction);
 
       if (resultado.jaPago) {
@@ -281,6 +336,7 @@ class LootSplitHandler {
         throw new Error('Falha ao processar pagamentos');
       }
 
+      // Atualizar mensagem no financeiro
       const embedConfirmacao = new EmbedBuilder()
         .setTitle('✅ PAGAMENTO CONFIRMADO')
         .setDescription(`Pagamento processado por ${interaction.user}`)
@@ -297,6 +353,7 @@ class LootSplitHandler {
         components: []
       });
 
+      // NOTIFICAR CANAL DO EVENTO
       try {
         const canalEvento = await interaction.guild.channels.fetch(canalEventoId);
         if (canalEvento) {
@@ -329,12 +386,8 @@ class LootSplitHandler {
       }
 
     } catch (error) {
-      console.error('[LOOTSPLIT] Erro:', error);
-      await interaction.editReply({
-        content: `❌ Erro ao processar pagamento: ${error.message}`,
-        embeds: [],
-        components: []
-      });
+      console.error('[LOOTSPLIT] Erro no processamento:', error);
+      throw error;
     }
   }
 
