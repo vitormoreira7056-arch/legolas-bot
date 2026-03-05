@@ -17,7 +17,7 @@ const ConfigHandler = require('./handlers/configHandler');
 const MemberListHandler = require('./handlers/memberListHandler');
 const LootSplitHandler = require('./handlers/lootSplitHandler');
 const EventStatsHandler = require('./handlers/eventStatsHandler');
-const ActionHandlers = require('./handlers/actionHandlers'); // 🆕 ADICIONADO
+const ActionHandlers = require('./handlers/actionHandlers');
 const db = require('./utils/database');
 
 const client = new Client({
@@ -138,10 +138,10 @@ async function atualizarSaldoGuilda() {
 setInterval(atualizarSaldoGuilda, 300000);
 global.atualizarSaldoGuilda = atualizarSaldoGuilda;
 
-client.once(Events.ClientReady, async () => { // 🆕 ADICIONADO async
+client.once(Events.ClientReady, async () => {
   // CARREGAR DADOS PERSISTIDOS
   try {
-    await LootSplitHandler.loadSimulations(); // 🆕 ADICIONADO await
+    await LootSplitHandler.loadSimulations();
     EventStatsHandler.loadStats();
   } catch (error) {
     console.error('Erro ao carregar dados persistidos:', error);
@@ -188,7 +188,7 @@ client.on(Events.GuildMemberRemove, async (member) => {
 
 // Handler de Interações
 client.on(Events.InteractionCreate, async interaction => {
-  // 🆕 HANDLER PARA SELECT MENUS (Estatísticas)
+  // HANDLER PARA SELECT MENUS (Estatísticas)
   if (interaction.isStringSelectMenu()) {
     if (interaction.customId === 'event_stats_filter') {
       try {
