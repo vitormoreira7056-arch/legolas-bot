@@ -557,30 +557,56 @@ class EventActions {
     await EventStatsHandler.updatePanel(interaction.guild);
   }
 
+  // 🆕 CORREÇÃO: Método handleUpdateParticipation corrigido
   static async handleUpdateParticipation(interaction, eventId) {
     const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
     const isCaller = interaction.member.roles.cache.some(r => r.name === 'Caller');
 
     if (!isADM && !isCaller) {
-      return interaction.reply({ content: '❌ Sem permissão!', ephemeral: true });
+      return interaction.reply({ 
+        content: '❌ Apenas ADMs ou Callers podem atualizar participações!',
+        ephemeral: true 
+      });
     }
 
     try {
-      if (!LootSplitUI || typeof LootSplitUI.createUpdateParticipationModal !== 'function') {
+      console.log(`[UPDATE-PARTICIPACAO] Criando modal para evento: ${eventId}`);
+      
+      // Verificar se LootSplitUI está disponível
+      if (!LootSplitUI) {
+        console.error('[UPDATE-PARTICIPACAO] LootSplitUI não importado!');
         return interaction.reply({
-          content: '❌ Erro interno.',
+          content: '❌ Erro interno: LootSplitUI não disponível.',
+          ephemeral: true
+        });
+      }
+
+      if (typeof LootSplitUI.createUpdateParticipationModal !== 'function') {
+        console.error('[UPDATE-PARTICIPACAO] createUpdateParticipationModal não é uma função!');
+        return interaction.reply({
+          content: '❌ Erro interno: Método de atualização indisponível.',
           ephemeral: true
         });
       }
 
       const modal = LootSplitUI.createUpdateParticipationModal(eventId);
       await interaction.showModal(modal);
+      
+      console.log(`[UPDATE-PARTICIPACAO] Modal mostrado com sucesso!`);
+
     } catch (error) {
-      console.error('[EVENTACTIONS] Erro ao mostrar modal de atualização:', error);
-      await interaction.reply({
-        content: '❌ Erro ao abrir atualização.',
-        ephemeral: true
-      });
+      console.error('[UPDATE-PARTICIPACAO] Erro ao mostrar modal:', error);
+      
+      try {
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({
+            content: `❌ Erro ao abrir atualização: ${error.message}`,
+            ephemeral: true
+          });
+        }
+      } catch (replyError) {
+        console.error('[UPDATE-PARTICIPACAO] Não foi possível enviar resposta:', replyError);
+      }
     }
   }
 
