@@ -255,11 +255,17 @@ class SetupManager {
       { id: perms.staff, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages] }
     ]);
 
-    // Só envia painel se o canal foi criado agora
+    // 🆕 CORREÇÃO: Só envia painel se o canal foi criado agora - USANDO IMAGEM LOCAL
     if (this.createdChannels.includes('📋╠registrar')) {
+      // 🆕 NOVO: Usar método que retorna embed + attachment
+      const { embed, attachment } = EmbedUtils.createRegistrationPanelWithAttachment();
+      const buttons = EmbedUtils.createRegisterButton();
+      
       await chRegistrar.send({
-        embeds: [EmbedUtils.createRegistrationPanel()],
-        components: [EmbedUtils.createRegisterButton()]
+        content: '📢 **Bem-vindo ao sistema de recrutamento!**',
+        embeds: [embed],
+        files: [attachment], // 🆕 ANEXAR A IMAGEM
+        components: [buttons]
       });
     }
 
