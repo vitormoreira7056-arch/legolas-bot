@@ -21,17 +21,12 @@ class RegistrationActions {
       });
     }
 
-    const parts = customId.split('_');
-    const tipo = parts[1];
-    const userId = parts[2];
-
-    const cargoMap = {
-      'notag': 'NOTAG',
-      'evento': 'Member Evento',
-      'alianca': 'ALIANÇA'
-    };
-
-    const cargoNome = cargoMap[tipo];
+    // 🆕 CORREÇÃO: O customId é apenas 'aprovar_userId', não 'aprovar_tipo_userId'
+    const userId = customId.replace('aprovar_', '');
+    
+    // 🆕 Padrão: Aprovar como NOTAG por padrão, ou pode ser modificado para detectar tipo
+    const cargoNome = 'NOTAG';
+    
     const guild = interaction.guild;
     const targetMember = await guild.members.fetch(userId).catch(() => null);
 
@@ -66,7 +61,6 @@ class RegistrationActions {
         }
 
         if (nicknameJogo && nicknameJogo.length > 0 && nicknameJogo !== 'Não informado') {
-          // 🆕 VERIFICAÇÃO: Verificar se o bot pode alterar o nickname (hierarquia de cargos)
           const botMember = guild.members.cache.get(interaction.client.user.id);
           if (botMember.roles.highest.position > targetMember.roles.highest.position) {
             await targetMember.setNickname(nicknameJogo);
@@ -76,7 +70,6 @@ class RegistrationActions {
           }
         }
       } catch (nickError) {
-        // Silenciar erro de nickname - não é crítico
         console.log(`ℹ️ Nickname não alterado para ${targetMember.user.tag}: ${nickError.message}`);
       }
 
@@ -122,7 +115,8 @@ class RegistrationActions {
       });
     }
 
-    const userId = customId.split('_')[1];
+    // 🆕 CORREÇÃO: O customId é 'recusar_userId'
+    const userId = customId.replace('recusar_', '');
     const guild = interaction.guild;
     const targetMember = await guild.members.fetch(userId).catch(() => null);
 
