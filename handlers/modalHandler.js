@@ -1,4 +1,4 @@
-const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder } = require('discord.js');
+const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle } = require('discord.js'); // 🆕 CORRIGIDO: Adicionado ButtonBuilder e ButtonStyle
 const EmbedUtils = require('../utils/embedUtils');
 const EventHandler = require('./eventHandler');
 const ConfigHandler = require('./configHandler');
