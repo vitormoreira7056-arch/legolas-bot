@@ -45,7 +45,7 @@ class BankCore {
       embeds: [
         BankEmbeds.createSuccessEmbed(
           '⏳ **SAQUE SOLICITADO**',
-          `> Sua solicitação de saque foi enviada para aprovação!\n\n**💰 Valor:** 🪙 ${valor.toLocaleString()}\n**📊 Saldo atual:** 🪙 ${user.saldo.toLocaleString()}\n\n*Aguarde a aprovação de um ADM.*`,
+          `\> Sua solicitação de saque foi enviada para aprovação!\n\n**💰 Valor:** 🪙 ${valor.toLocaleString()}\n**📊 Saldo atual:** 🪙 ${user.saldo.toLocaleString()}\n\n*Aguarde a aprovação de um ADM.*`,
           BankEmbeds.colors.warning
         )
       ],
@@ -88,7 +88,7 @@ class BankCore {
       embeds: [
         BankEmbeds.createSuccessEmbed(
           '⏳ **EMPRÉSTIMO SOLICITADO**',
-          `> Sua solicitação de empréstimo foi enviada para análise!\n\n**💰 Valor:** 🪙 ${valor.toLocaleString()}\n**📊 Saldo atual:** 🪙 ${user.saldo.toLocaleString()}\n\n*Aguarde a aprovação de um ADM.*`,
+          `\> Sua solicitação de empréstimo foi enviada para análise!\n\n**💰 Valor:** 🪙 ${valor.toLocaleString()}\n**📊 Saldo atual:** 🪙 ${user.saldo.toLocaleString()}\n\n*Aguarde a aprovação de um ADM.*`,
           BankEmbeds.colors.info
         )
       ],
@@ -127,7 +127,7 @@ class BankCore {
         embeds: [
           BankEmbeds.createSuccessEmbed(
             '✅ **SAQUE APROVADO!**',
-            `> Seu saque foi **APROVADO**!\n\n**💰 Valor:** 🪙 ${withdrawal.valor.toLocaleString()}\n**💵 Saldo restante:** 🪙 ${user.saldo.toLocaleString()}\n\n*Entre em contato com um ADM para receber o valor.*`
+            `\> Seu saque foi **APROVADO**!\n\n**💰 Valor:** 🪙 ${withdrawal.valor.toLocaleString()}\n**💵 Saldo restante:** 🪙 ${user.saldo.toLocaleString()}\n\n*Entre em contato com um ADM para receber o valor.*`
           )
         ]
       }).catch(() => {});
@@ -159,7 +159,7 @@ class BankCore {
         embeds: [
           BankEmbeds.createSuccessEmbed(
             '❌ **SAQUE RECUSADO**',
-            `> Seu saque foi **RECUSADO**.\n\n**💰 Valor:** 🪙 ${withdrawal.valor.toLocaleString()}\n\n*Entre em contato com um ADM para mais informações.*`,
+            `\> Seu saque foi **RECUSADO**.\n\n**💰 Valor:** 🪙 ${withdrawal.valor.toLocaleString()}\n\n*Entre em contato com um ADM para mais informações.*`,
             BankEmbeds.colors.danger
           )
         ]
@@ -198,7 +198,7 @@ class BankCore {
         embeds: [
           BankEmbeds.createSuccessEmbed(
             '✅ **EMPRÉSTIMO APROVADO!**',
-            `> Seu empréstimo foi **APROVADO**!\n\n**💰 Valor liberado:** 🪙 ${loan.valor.toLocaleString()}\n**💵 Saldo atual:** 🪙 ${user.saldo.toLocaleString()}\n**💳 Dívida total:** 🪙 ${user.emprestimo.toLocaleString()}\n\n*Use /saldo para ver seu extrato.*`
+            `\> Seu empréstimo foi **APROVADO**!\n\n**💰 Valor liberado:** 🪙 ${loan.valor.toLocaleString()}\n**💵 Saldo atual:** 🪙 ${user.saldo.toLocaleString()}\n**💳 Dívida total:** 🪙 ${user.emprestimo.toLocaleString()}\n\n*Use /saldo para ver seu extrato.*`
           )
         ]
       }).catch(() => {});
@@ -230,7 +230,7 @@ class BankCore {
         embeds: [
           BankEmbeds.createSuccessEmbed(
             '❌ **EMPRÉSTIMO RECUSADO**',
-            `> Seu pedido de empréstimo foi **RECUSADO**.\n\n**💰 Valor solicitado:** 🪙 ${loan.valor.toLocaleString()}\n\n*Entre em contato com um ADM para mais informações.*`,
+            `\> Seu pedido de empréstimo foi **RECUSADO**.\n\n**💰 Valor solicitado:** 🪙 ${loan.valor.toLocaleString()}\n\n*Entre em contato com um ADM para mais informações.*`,
             BankEmbeds.colors.danger
           )
         ]
@@ -269,7 +269,7 @@ class BankCore {
           new EmbedBuilder()
             .setTitle('💰 **DEPÓSITO RECEBIDO!**')
             .setDescription(
-              `> Você recebeu um depósito na sua conta!\n\n` +
+              `\> Você recebeu um depósito na sua conta!\n\n` +
               `**💰 Valor:** 🪙 ${valor.toLocaleString()}\n` +
               `**📝 Motivo:** ${motivo}\n` +
               `**💵 Novo Saldo:** 🪙 ${user.saldo.toLocaleString()}\n` +
@@ -305,6 +305,183 @@ class BankCore {
     }
 
     return user;
+  }
+
+  // 🆕 MÉTODO ADICIONADO: Aprovação de venda de baú
+  static async approveVenda(interaction, vendaId) {
+    const venda = global.vendasPendentes?.get(vendaId);
+    
+    if (!venda) {
+      return interaction.reply({
+        content: '❌ Venda não encontrada ou já processada!',
+        ephemeral: true
+      });
+    }
+
+    // Verificar permissões
+    const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
+    const isStaff = interaction.member.roles.cache.some(r => r.name === 'Staff');
+    
+    if (!isADM && !isStaff) {
+      return interaction.reply({
+        content: '❌ Apenas ADMs ou Staff podem aprovar vendas!',
+        ephemeral: true
+      });
+    }
+
+    try {
+      const user = db.getUser(venda.userId);
+      
+      // Creditar valor líquido
+      user.saldo += venda.valorLiquido;
+      user.totalDepositado += venda.valorLiquido;
+      db.updateUser(venda.userId, user);
+
+      // Registrar taxa se houver
+      if (venda.taxa > 0) {
+        const valorTaxa = venda.valor - venda.valorLiquido;
+        db.adicionarTaxaBau(valorTaxa, venda.local, vendaId);
+      }
+
+      // Criar transação
+      db.addTransaction('venda_bau', venda.userId, venda.valorLiquido, {
+        vendaId: vendaId,
+        local: venda.local,
+        valorTotal: venda.valor,
+        taxa: venda.taxa,
+        aprovadoPor: interaction.user.id
+      });
+
+      // Remover da lista de pendentes
+      global.vendasPendentes.delete(vendaId);
+
+      // Atualizar mensagem original
+      const embedAprovado = new EmbedBuilder()
+        .setTitle('✅ **VENDA APROVADA**')
+        .setDescription(`Aprovado por ${interaction.user}`)
+        .setColor(0x57F287)
+        .setThumbnail(interaction.guild.members.cache.get(venda.userId)?.user.displayAvatarURL({ dynamic: true }))
+        .addFields(
+          { name: '👤 **Vendedor**', value: `<@${venda.userId}>`, inline: true },
+          { name: '📍 **Local**', value: venda.local, inline: true },
+          { name: '💰 **Valor Total**', value: `🪙 ${venda.valor.toLocaleString()}`, inline: true },
+          { name: '💸 **Taxa**', value: `${venda.taxa}% (🪙 ${(venda.valor - venda.valorLiquido).toLocaleString()})`, inline: true },
+          { name: '💵 **Valor Líquido**', value: `🪙 ${venda.valorLiquido.toLocaleString()}`, inline: true },
+          { name: '💳 **Novo Saldo**', value: `🪙 ${user.saldo.toLocaleString()}`, inline: true }
+        )
+        .setTimestamp();
+
+      await interaction.update({ 
+        embeds: [embedAprovado], 
+        components: [] 
+      });
+
+      // Notificar vendedor
+      try {
+        const vendedor = await interaction.client.users.fetch(venda.userId);
+        await vendedor.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('💰 **VENDA APROVADA!**')
+              .setDescription(`> Sua venda de baú foi **APROVADA**!`)
+              .setColor(0x57F287)
+              .addFields(
+                { name: '📍 Local', value: venda.local, inline: true },
+                { name: '💰 Valor Recebido', value: `🪙 ${venda.valorLiquido.toLocaleString()}`, inline: true },
+                { name: '💵 Saldo Atual', value: `🪙 ${user.saldo.toLocaleString()}`, inline: true }
+              )
+              .setTimestamp()
+          ]
+        });
+      } catch (e) {
+        console.log(`[BANK] Não foi possível notificar vendedor ${venda.userId}`);
+      }
+
+      // Atualizar painel de saldo
+      if (global.atualizarSaldoGuilda) {
+        await global.atualizarSaldoGuilda();
+      }
+
+    } catch (error) {
+      console.error('[BANK] Erro ao aprovar venda:', error);
+      await interaction.reply({
+        content: '❌ Erro ao processar aprovação!',
+        ephemeral: true
+      });
+    }
+  }
+
+  // 🆕 MÉTODO ADICIONADO: Rejeição de venda de baú
+  static async rejectVenda(interaction, vendaId) {
+    const venda = global.vendasPendentes?.get(vendaId);
+    
+    if (!venda) {
+      return interaction.reply({
+        content: '❌ Venda não encontrada!',
+        ephemeral: true
+      });
+    }
+
+    // Verificar permissões
+    const isADM = interaction.member.roles.cache.some(r => r.name === 'ADM');
+    const isStaff = interaction.member.roles.cache.some(r => r.name === 'Staff');
+    
+    if (!isADM && !isStaff) {
+      return interaction.reply({
+        content: '❌ Apenas ADMs ou Staff podem recusar vendas!',
+        ephemeral: true
+      });
+    }
+
+    try {
+      // Remover da lista de pendentes
+      global.vendasPendentes.delete(vendaId);
+
+      // Atualizar mensagem original
+      const embedRecusado = new EmbedBuilder()
+        .setTitle('❌ **VENDA RECUSADA**')
+        .setDescription(`Recusado por ${interaction.user}`)
+        .setColor(0xED4245)
+        .setThumbnail(interaction.guild.members.cache.get(venda.userId)?.user.displayAvatarURL({ dynamic: true }))
+        .addFields(
+          { name: '👤 **Vendedor**', value: `<@${venda.userId}>`, inline: true },
+          { name: '📍 **Local**', value: venda.local, inline: true },
+          { name: '💰 **Valor**', value: `🪙 ${venda.valor.toLocaleString()}`, inline: true }
+        )
+        .setTimestamp();
+
+      await interaction.update({ 
+        embeds: [embedRecusado], 
+        components: [] 
+      });
+
+      // Notificar vendedor
+      try {
+        const vendedor = await interaction.client.users.fetch(venda.userId);
+        await vendedor.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('❌ **VENDA RECUSADA**')
+              .setDescription(`> Sua venda de baú foi **RECUSADA**.`)
+              .setColor(0xED4245)
+              .addFields(
+                { name: '📍 Local', value: venda.local, inline: true },
+                { name: '💰 Valor', value: `🪙 ${venda.valor.toLocaleString()}`, inline: true }
+              )
+              .setTimestamp()
+          ]
+        });
+      } catch (e) {
+        console.log(`[BANK] Não foi possível notificar vendedor ${venda.userId}`);
+      }
+
+    } catch (error) {
+      console.error('[BANK] Erro ao recusar venda:', error);
+      await interaction.reply({
+        content: '❌ Erro ao processar recusa!',
+        ephemeral: true
+      });
+    }
   }
 
   static createBalanceEmbed(user, member) {
