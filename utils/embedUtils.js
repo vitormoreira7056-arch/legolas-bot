@@ -1,20 +1,60 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
+const path = require('path');
 
 class EmbedUtils {
   // Cores modernas
   static colors = {
-    primary: 0x5865F2, // Discord Blurple
-    success: 0x57F287, // Verde
-    danger: 0xED4245, // Vermelho
-    warning: 0xFEE75C, // Amarelo
-    info: 0x5865F2, // Info
-    dark: 0x2C2F33, // Escuro
-    gold: 0xF1C40F, // Dourado
-    event: 0xE74C3C // Eventos
+    primary: 0x5865F2,
+    success: 0x57F287,
+    danger: 0xED4245,
+    warning: 0xFEE75C,
+    info: 0x5865F2,
+    dark: 0x2C2F33,
+    gold: 0xF1C40F,
+    event: 0xE74C3C
   };
 
-  // ========== REGISTRO ==========
+  // 🆕 MÉTODO PARA CRIAR O PAINEL COM ANEXO
+  static createRegistrationPanelWithAttachment() {
+    // Criar o embed SEM a imagem primeiro
+    const embed = new EmbedBuilder()
+      .setTitle('🎮 **REGISTRO DE MEMBRO**')
+      .setDescription(
+        '> Bem-vindo ao processo de recrutamento da guilda!\n\n' +
+        '**📋 Requisitos:**\n' +
+        '• Ser ativo no Albion Online\n' +
+        '• Ter espírito de equipe\n' +
+        '• Participar de eventos guild\n\n' +
+        '**📝 Informações necessárias:**\n' +
+        '```yaml\n' +
+        'Nickname: Seu nome no jogo\n' +
+        'Guilda: Atual ou antiga\n' +
+        'Plataforma: Mobile ou PC\n' +
+        'Arma/Spec: Sua especialização\n' +
+        'Print: Link da foto dos atributos (OPCIONAL)\n' +
+        '```\n\n' +
+        '📸 **Como enviar prints?**\n' +
+        '• Upload sua imagem em: https://imgur.com/upload\n' +
+        '• Ou use: https://prnt.sc/ (Lightshot)\n' +
+        '• Ou: https://postimages.org/\n\n' +
+        '*Clique no botão abaixo para iniciar seu registro*'
+      )
+      .setColor(this.colors.primary)
+      .setImage('attachment://recrutamento.png') // 🆕 USA ATTACHMENT
+      .setThumbnail('https://i.imgur.com/JRX6b0G.png')
+      .setFooter({
+        text: 'Sistema de Recrutamento • Albion Guild',
+        iconURL: 'https://i.imgur.com/JRX6b0G.png'
+      })
+      .setTimestamp();
 
+    // Criar o anexo do arquivo local
+    const attachment = new AttachmentBuilder(path.join(__dirname, '..', 'png', 'recrutamento.png'));
+
+    return { embed, attachment };
+  }
+
+  // Método antigo mantido para compatibilidade (sem imagem)
   static createRegistrationPanel() {
     return new EmbedBuilder()
       .setTitle('🎮 **REGISTRO DE MEMBRO**')
@@ -39,7 +79,6 @@ class EmbedUtils {
         '*Clique no botão abaixo para iniciar seu registro*'
       )
       .setColor(this.colors.primary)
-      .setImage('png/recrutamento.png') // 🆕 CAMINHO LOCAL DA IMAGEM
       .setThumbnail('https://i.imgur.com/JRX6b0G.png')
       .setFooter({
         text: 'Sistema de Recrutamento • Albion Guild',
@@ -159,8 +198,6 @@ class EmbedUtils {
         .setTimestamp();
     }
   }
-
-  // ========== EVENTOS ==========
 
   static createEventPanelEmbed() {
     return new EmbedBuilder()
