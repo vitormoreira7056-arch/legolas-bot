@@ -93,51 +93,53 @@ class ButtonHandler {
       // ========== LOOTSPLIT ==========
       if (customId.startsWith('simulate_loot_')) {
         const eventId = customId.replace('simulate_loot_', '');
-        console.log(`[LOOTSPLIT] Simulando para evento: ${eventId}`);
-
         try {
           await ActionHandlers.handleSimulateLoot(interaction, eventId);
         } catch (error) {
-          console.error(`[LOOTSPLIT] Erro ao simular:`, error);
-          try {
-            if (interaction.replied || interaction.deferred) {
-              await interaction.followUp({
-                content: '❌ Erro ao abrir simulação. Tente novamente.',
-                ephemeral: true
-              });
-            } else {
-              await interaction.reply({
-                content: '❌ Erro ao abrir simulação. Tente novamente.',
-                ephemeral: true
-              });
-            }
-          } catch {}
+          console.error(`[LOOTSPLIT] Erro:`, error);
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: '❌ Erro!', ephemeral: true });
+          }
         }
         return;
       }
 
       if (customId.startsWith('resimulate_loot_')) {
         const eventId = customId.replace('resimulate_loot_', '');
-        console.log(`[LOOTSPLIT] Re-simulando para evento: ${eventId}`);
-
         try {
           await ActionHandlers.handleResimulateLoot(interaction, eventId);
         } catch (error) {
-          console.error(`[LOOTSPLIT] Erro ao reabrir simulação:`, error);
-          try {
-            if (interaction.replied || interaction.deferred) {
-              await interaction.followUp({
-                content: '❌ Erro ao reabrir simulação.',
-                ephemeral: true
-              });
-            } else {
-              await interaction.reply({
-                content: '❌ Erro ao reabrir simulação.',
-                ephemeral: true
-              });
-            }
-          } catch {}
+          console.error(`[LOOTSPLIT] Erro:`, error);
         }
+        return;
+      }
+
+      // 🆕 NOVO: Enviar para financeiro
+      if (customId.startsWith('enviar_financeiro_')) {
+        const eventId = customId.replace('enviar_financeiro_', '');
+        await interaction.deferUpdate();
+        await LootSplitHandler.enviarParaFinanceiro(interaction, eventId);
+        return;
+      }
+
+      // 🆕 NOVO: Confirmar pagamento no financeiro
+      if (customId.startsWith('confirmar_split_financeiro_')) {
+        const parts = customId.replace('confirmar_split_financeiro_', '').split('_');
+        const eventId = parts[0];
+        const canalEventoId = parts[1];
+        await LootSplitHandler.handleConfirmarSplitFinanceiro(interaction, eventId, canalEventoId);
+        return;
+      }
+
+      // 🆕 NOVO: Recusar no financeiro
+      if (customId.startsWith('recusar_split_financeiro_')) {
+        const eventId = customId.replace('recusar_split_financeiro_', '');
+        await interaction.deferUpdate();
+        await interaction.editReply({
+          content: '❌ Pagamento recusado.',
+          embeds: [],
+          components: []
+        });
         return;
       }
 
@@ -154,18 +156,10 @@ class ButtonHandler {
         return;
       }
 
-      // 🆕 NOVO: Handler para arquivar evento (botão que aparece após pagamento)
       if (customId.startsWith('arquivar_evento_')) {
         const eventId = customId.replace('arquivar_evento_', '');
         await interaction.deferUpdate().catch(() => {});
         await LootSplitHandler.handleArquivarEvento(interaction, eventId);
-        return;
-      }
-
-      if (customId.startsWith('confirmar_split_')) {
-        const eventId = customId.replace('confirmar_split_', '');
-        await interaction.deferUpdate().catch(() => {});
-        await LootSplitHandler.handleConfirmarSplit(interaction, eventId);
         return;
       }
 
@@ -204,7 +198,6 @@ class ButtonHandler {
         return;
       }
 
-      // ========== ATUALIZAR BOT ==========
       if (customId === 'atualizar_bot') {
         await ActionHandlers.handleAtualizarBot(interaction);
         return;
@@ -257,11 +250,11 @@ class ButtonHandler {
       }
 
     } catch (error) {
-      console.error(`[ERRO] No handler de botões (${customId}):`, error);
+      console.error(`[ERRO] No handler (${customId}):`, error);
       try {
         if (!interaction.replied && !interaction.deferred) {
           await interaction.reply({
-            content: '❌ Erro ao processar botão. Tente novamente.',
+            content: '❌ Erro ao processar botão.',
             ephemeral: true
           });
         }
