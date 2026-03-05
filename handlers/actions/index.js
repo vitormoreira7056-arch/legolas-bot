@@ -1,98 +1,44 @@
-const RegistrationActions = require('./registrationActions');
 const EventActions = require('./eventActions');
+const ConfigActions = require('../configActions');
+const RegistrationActions = require('../registrationActions');
 
-// Compatibilidade com código antigo - removemos configActions daqui
-class ActionHandlers {
-  // Registration
-  static handleIniciarRegistro(...args) { return RegistrationActions.handleIniciarRegistro(...args); }
-  static handleApproval(...args) { return RegistrationActions.handleApproval(...args); }
-  static handleRejection(...args) { return RegistrationActions.handleRejection(...args); }
-
-  // Events
-  static handleCriarEventoCustom(...args) { return EventActions.handleCriarEventoCustom(...args); }
-  static handleCriarPresetEvent(...args) { return EventActions.handleCriarPresetEvent(...args); }
-  static handleEventAction(...args) { return EventActions.handleEventAction(...args); }
-  static handleSimulateLoot(...args) { return EventActions.handleSimulateLoot(...args); }
-  static handleResimulateLoot(...args) { return EventActions.handleResimulateLoot(...args); }
-  static handleArchiveLoot(...args) { return EventActions.handleArchiveLoot(...args); }
-  static handleUpdateParticipation(...args) { return EventActions.handleUpdateParticipation(...args); }
-  static handleEventStatsFilter(...args) { return EventActions.handleEventStatsFilter(...args); }
-
-  // Config & Bank - Agora importamos de handlers/, não de actions/
-  static handleConfigTaxa(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleConfigTaxa(...args); 
-  }
-  static handleConfigTaxasBau(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleConfigTaxasBau(...args); 
-  }
-  static handleConfigXP(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleConfigXP(...args); 
-  }
-  static handleConfigVerAtual(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleConfigVerAtual(...args); 
-  }
-  static handleXPAtivar(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleXPAtivar(...args); 
-  }
-  static handleXPDesativar(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleXPDesativar(...args); 
-  }
-  static handleVoltarConfig(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleVoltarConfig(...args); 
-  }
-  static handleAtualizarBot(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleAtualizarBot(...args); 
-  }
-  static handleVenderLootButton(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleVenderLootButton(...args); 
-  }
-  static handleConsultarSaldoDM(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleConsultarSaldoDM(...args); 
-  }
-  static handleSacarSaldoButton(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleSacarSaldoButton(...args); 
-  }
-  static handleApproveWithdrawal(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleApproveWithdrawal(...args); 
-  }
-  static handleRejectWithdrawal(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleRejectWithdrawal(...args); 
-  }
-  static handleApproveLoan(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleApproveLoan(...args); 
-  }
-  static handleRejectLoan(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleRejectLoan(...args); 
-  }
-
-  // 🆕 ADICIONADOS - Métodos de transferência que faltavam
-  static handleTransferirSaldoButton(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleTransferirSaldoButton(...args); 
-  }
-  static handleConfirmarTransferencia(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleConfirmarTransferencia(...args); 
-  }
-  static handleRecusarTransferencia(...args) { 
-    const ConfigActions = require('../configActions');
-    return ConfigActions.handleRecusarTransferencia(...args); 
-  }
-}
-
-module.exports = ActionHandlers;
+// Exportar todos os handlers de ações
+module.exports = {
+  // Eventos
+  handleCriarEventoCustom: EventActions.handleCriarEventoCustom.bind(EventActions),
+  handleCriarPresetEvent: EventActions.handleCriarPresetEvent.bind(EventActions),
+  handleEventAction: EventActions.handleEventAction.bind(EventActions),
+  handleSimulateLoot: EventActions.handleSimulateLoot.bind(EventActions),
+  handleResimulateLoot: EventActions.handleResimulateLoot.bind(EventActions),
+  handleArchiveLoot: EventActions.handleArchiveLoot.bind(EventActions),
+  handleUpdateParticipation: EventActions.handleUpdateParticipation.bind(EventActions), // 🆕 GARANTIR QUE ESTÁ EXPORTADO
+  
+  // Configurações
+  handleConfigTaxa: ConfigActions.handleConfigTaxa.bind(ConfigActions),
+  handleConfigTaxasBau: ConfigActions.handleConfigTaxasBau.bind(ConfigActions),
+  handleConfigXP: ConfigActions.handleConfigXP.bind(ConfigActions),
+  handleConfigVerAtual: ConfigActions.handleConfigVerAtual.bind(ConfigActions),
+  handleXPAtivar: ConfigActions.handleXPAtivar.bind(ConfigActions),
+  handleXPDesativar: ConfigActions.handleXPDesativar.bind(ConfigActions),
+  handleVoltarConfig: ConfigActions.handleVoltarConfig.bind(ConfigActions),
+  handleAtualizarBot: ConfigActions.handleAtualizarBot.bind(ConfigActions),
+  
+  // Banco
+  handleVenderLootButton: ConfigActions.handleVenderLootButton.bind(ConfigActions),
+  handleConsultarSaldoDM: ConfigActions.handleConsultarSaldoDM.bind(ConfigActions),
+  handleSacarSaldoButton: ConfigActions.handleSacarSaldoButton.bind(ConfigActions),
+  handleApproveWithdrawal: ConfigActions.handleApproveWithdrawal.bind(ConfigActions),
+  handleRejectWithdrawal: ConfigActions.handleRejectWithdrawal.bind(ConfigActions),
+  handleApproveLoan: ConfigActions.handleApproveLoan.bind(ConfigActions),
+  handleRejectLoan: ConfigActions.handleRejectLoan.bind(ConfigActions),
+  
+  // Transferências
+  handleTransferirSaldoButton: ConfigActions.handleTransferirSaldoButton.bind(ConfigActions),
+  handleConfirmarTransferencia: ConfigActions.handleConfirmarTransferencia.bind(ConfigActions),
+  handleRecusarTransferencia: ConfigActions.handleRecusarTransferencia.bind(ConfigActions),
+  
+  // Registro
+  handleIniciarRegistro: RegistrationActions.handleIniciarRegistro.bind(RegistrationActions),
+  handleApproval: RegistrationActions.handleApproval.bind(RegistrationActions),
+  handleRejection: RegistrationActions.handleRejection.bind(RegistrationActions)
+};
