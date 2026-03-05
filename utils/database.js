@@ -1,9 +1,12 @@
+// Banco de dados simples em memória (substituir por Replit DB ou MongoDB em produção)
 class Database {
   constructor() {
     this.users = new Map();
     this.transactions = [];
     this.pendingWithdrawals = new Map();
     this.pendingLoans = new Map();
+    // 🆕 NOVO: Rastrear taxas arrecadadas separadamente
+    this.taxasArrecadadas = 0;
   }
 
   getUser(userId) {
@@ -95,6 +98,12 @@ class Database {
       status: 'completed'
     };
     this.transactions.push(transaction);
+    
+    // 🆕 Se for taxa da guilda, adicionar à arrecadação
+    if (type === 'taxa_guilda' || type === 'taxa_venda_bau') {
+      this.taxasArrecadadas += valor;
+    }
+    
     return transaction;
   }
 
@@ -226,12 +235,45 @@ class Database {
     return distribuicao;
   }
 
+  // 🆕 CORREÇÃO: Retorna soma dos saldos dos membros (o que o bot gerencia)
   getGuildBalance() {
     let total = 0;
     for (const user of this.users.values()) {
       total += user.saldo;
     }
     return total;
+  }
+
+  // 🆕 NOVO: Retorna total de taxas arrecadadas
+  getTotalTaxasArrecadadas() {
+    // Soma de todas as transações do tipo taxa_guilda ou taxa_venda_bau
+    let totalTaxas = 0;
+    for (const transaction of this.transactions) {
+      if (transaction.type === 'taxa_guilda' || transaction.type === 'taxa_venda_bau') {
+        totalTaxas += transaction.valor;
+      }
+    }
+    return totalTaxas;
+  }
+
+  // 🆕 NOVO: Retorna total de dívidas (empréstimos pendentes)
+  getTotalDividas() {
+    let total = 0;
+    for (const user of this.users.values()) {
+      total += user.emprestimo || 0;
+    }
+    return total;
+  }
+
+  // 🆕 NOVO: Adicionar taxa de venda de baú manualmente
+  adicionarTaxaBau(valor, local, vendaId) {
+    this.taxasArrecadadas += valor;
+    this.addTransaction('taxa_venda_bau', 'GUILDA', valor, {
+      local: local,
+      vendaId: vendaId,
+      tipo: 'receita_taxa_bau'
+    });
+    return this.taxasArrecadadas;
   }
 }
 
